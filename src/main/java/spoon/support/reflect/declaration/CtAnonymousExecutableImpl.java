@@ -1,4 +1,4 @@
-/**
+/*
  * SPDX-License-Identifier: (MIT OR CECILL-C)
  *
  * Copyright (C) 2006-2019 INRIA and contributors
@@ -112,6 +112,13 @@ public class CtAnonymousExecutableImpl extends CtExecutableImpl<Void> implements
 	@Override
 	@UnsettableProperty
 	public CtExecutable addParameter(CtParameter parameter) {
+		// unsettable property
+		return this;
+	}
+
+	@Override
+	@UnsettableProperty
+	public CtExecutable addParameterAt(int position, CtParameter parameter) {
 		// unsettable property
 		return this;
 	}

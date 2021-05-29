@@ -7,17 +7,16 @@
  */
 package spoon.test.prettyprinter;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import spoon.Launcher;
 import spoon.SpoonException;
 import spoon.refactoring.Refactoring;
 import spoon.reflect.CtModel;
-import spoon.reflect.code.CtBlock;
 import spoon.reflect.code.CtConstructorCall;
 import spoon.reflect.code.CtCodeSnippetExpression;
 import spoon.reflect.code.CtExpression;
+import spoon.reflect.code.CtFor;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLocalVariable;
 import spoon.reflect.code.CtStatement;
@@ -33,6 +32,7 @@ import spoon.reflect.declaration.CtPackage;
 import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.ModifierKind;
 import spoon.reflect.factory.Factory;
+import spoon.reflect.path.CtRole;
 import spoon.reflect.reference.CtExecutableReference;
 import spoon.reflect.reference.CtReference;
 import spoon.reflect.reference.CtTypeReference;
@@ -60,44 +60,40 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 import static org.hamcrest.CoreMatchers.allOf;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.anyOf;
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static spoon.test.SpoonTestHelpers.assumeNotWindows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class TestSniperPrinter {
 
-	@Rule
-	public TemporaryFolder folder = new TemporaryFolder();
-
 	@Test
-	public void testClassRename1() throws Exception {
+	public void testClassRename1(@TempDir File tempDir) throws Exception {
 		// contract: one can sniper out of the box after Refactoring.changeTypeName
-		testClassRename(type -> {
+		testClassRename(tempDir, type -> {
 			Refactoring.changeTypeName(type, "Bar");
 		});
 	}
 
 	@Test
-	public void testClassRename2() throws Exception {
+	public void testClassRename2(@TempDir File tempDir) throws Exception {
 		// contract: one can sniper after setSimpleName
 		// with the necessary tweaks
-		testClassRename(type -> {
+		testClassRename(tempDir, type -> {
 			type.setSimpleName("Bar");
 			type.getFactory().CompilationUnit().addType(type);
 		});
 
 	}
 
-	public void testClassRename(Consumer<CtType<?>> renameTransfo) throws Exception {
+	public void testClassRename(File tempdir, Consumer<CtType<?>> renameTransfo) throws Exception {
 		// contract: sniper supports class rename
 		String testClass = ToBeChanged.class.getName();
 		Launcher launcher = new Launcher();
@@ -105,7 +101,7 @@ public class TestSniperPrinter {
 		launcher.getEnvironment().setPrettyPrinterCreator(() -> {
 			return new SniperJavaPrettyPrinter(launcher.getEnvironment());
 		});
-		launcher.setBinaryOutputDirectory(folder.newFolder());
+		launcher.setBinaryOutputDirectory(tempdir);
 		launcher.buildModel();
 		Factory f = launcher.getFactory();
 
@@ -118,14 +114,13 @@ public class TestSniperPrinter {
 
 
 		String contentOfPrettyPrintedClassFromDisk = getContentOfPrettyPrintedClassFromDisk(type);
-		assertTrue(contentOfPrettyPrintedClassFromDisk, contentOfPrettyPrintedClassFromDisk.contains("EOLs*/ Bar<T, K>"));
+		assertTrue(contentOfPrettyPrintedClassFromDisk.contains("EOLs*/ Bar<T, K>"), contentOfPrettyPrintedClassFromDisk);
 
 	}
 
 
 	@Test
 	public void testPrintInsertedThrow() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		testSniper(Throw.class.getName(), type -> {
 			CtConstructorCall<?> ctConstructorCall = (CtConstructorCall<?>) type.getMethodsByName("foo").get(0).getBody().getStatements().get(0);
 			CtThrow ctThrow = type.getFactory().createCtThrow(ctConstructorCall.toString());
@@ -160,7 +155,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintLocalVariableDeclaration() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: joint local declarations can be sniper-printed in whole unmodified method
 		testSniper(OneLineMultipleVariableDeclaration.class.getName(), type -> {
 			type.getFields().stream().forEach(x -> { x.delete(); });
@@ -179,7 +173,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintLocalVariableDeclaration2() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: joint local declarations can be sniper-printed
 		testSniper(OneLineMultipleVariableDeclaration.class.getName(), type -> {
 			type.getElements(new TypeFilter<>(CtLocalVariable.class)).get(0).delete();
@@ -199,7 +192,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintOneLineMultipleVariableDeclaration() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: files with joint field declarations can be recompiled after sniper
 		testSniper(OneLineMultipleVariableDeclaration.class.getName(), type -> {
 			// we change something (anything would work)
@@ -238,7 +230,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintChangedComplex() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		//contract: sniper printing after remove of statement from nested complex `if else if ...`
 		testSniper("spoon.test.prettyprinter.testclasses.ComplexClass", type -> {
 			//find to be removed statement "bounds = false"
@@ -301,7 +292,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintAfterRemoveOfLastTypeMember() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		//contract: sniper print after remove of last type member - check that suffix spaces are printed correctly
 		testSniper(ToBeChanged.class.getName(), type -> {
 			//delete first parameter of method `andSomeOtherMethod`
@@ -313,7 +303,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testPrintAfterAddOfLastTypeMember() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		//contract: sniper print after add of last type member - check that suffix spaces are printed correctly
 		class Context {
 			CtField<?> newField;
@@ -416,7 +405,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testWhitespacePrependedToFieldAddedAtTop() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline and indentation must be inserted before a field that's added to the top
 		// of a class body when the class already has other type members.
 
@@ -438,7 +426,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testWhitespacePrependedToNestedClassAddedAtTop() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline and indentation must be inserted before a nested class that's added to
 		// the top of a class body when the class already has other type members.
 
@@ -458,7 +445,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testWhitespacePrependedToLocalVariableAddAtTopOfNonEmptyMethod() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline and indentation must be inserted before a local variable that's added
 		// to the top of a non-empty statement list.
 
@@ -484,7 +470,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testNewlineInsertedBetweenCommentAndTypeMemberWithAddedModifier() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline must be inserted after comment when a succeeding type member has had a
 		// modifier added to it
 
@@ -505,7 +490,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testNewlineInsertedBetweenCommentAndTypeMemberWithRemovedModifier() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline must be inserted after comment when a succeeding field has had a
 		// modifier removed from it
 
@@ -526,7 +510,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testNewlineInsertedBetweenModifiedCommentAndTypeMemberWithAddedModifier() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline must be inserted after modified comment when a succeeding type member
 		// has had its modifier list modified. We test modified comments separately from
 		// non-modified comments as they are handled differently in the printer.
@@ -548,7 +531,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testTypeMemberCommentDoesNotDisappearWhenAllModifiersAreRemoved() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: A comment on a field should not disappear when all of its modifiers are removed.
 
 		Consumer<CtType<?>> removeTypeMemberModifiers = type -> {
@@ -570,12 +552,11 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testAddedImportStatementPlacedOnSeparateLineInFileWithoutPackageStatement() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline must be inserted between import statements when a new one is added
 
 		Consumer<CtType<?>> addArrayListImport = type -> {
 			Factory factory = type.getFactory();
-			assertTrue("there should be no package statement in this test file", type.getPackage().isUnnamedPackage());
+			assertTrue(type.getPackage().isUnnamedPackage(), "there should be no package statement in this test file");
 			CtCompilationUnit cu = factory.CompilationUnit().getOrCreate(type);
 			CtTypeReference<?> arrayListRef = factory.Type().get(java.util.ArrayList.class).getReference();
 			cu.getImports().add(factory.createImport(arrayListRef));
@@ -591,13 +572,12 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testAddedImportStatementPlacedOnSeparateLineInFileWithPackageStatement() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: newline must be inserted both before and after a new import statement if ther
 		// is a package statement in the file
 
 		Consumer<CtType<?>> addArrayListImport = type -> {
 			Factory factory = type.getFactory();
-			assertFalse("there should be a package statement in this test file", type.getPackage().isUnnamedPackage());
+			assertFalse(type.getPackage().isUnnamedPackage(), "there should be a package statement in this test file");
 			CtCompilationUnit cu = factory.CompilationUnit().getOrCreate(type);
 			CtTypeReference<?> arrayListRef = factory.Type().get(java.util.ArrayList.class).getReference();
 			cu.getImports().add(factory.createImport(arrayListRef));
@@ -611,7 +591,6 @@ public class TestSniperPrinter {
 
 	@Test
 	public void testAddedElementsIndentedWithAppropriateIndentationStyle() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: added elements in a source file should be indented with the same style of
 		// indentation as in the rest of the file
 
@@ -764,6 +743,36 @@ public class TestSniperPrinter {
 		assertThrows(IllegalArgumentException.class, () -> sniper.calculate(cu, Collections.singletonList(primaryType)));
 	}
 
+	@Test
+	void testSniperRespectsDeletionInForInit() {
+		// contract: The sniper printer should detect deletions in for loop init as modifications
+		// and print the model accordingly.
+
+        Consumer<CtType<?>> deleteForUpdate = type -> {
+        	CtFor ctFor = type.filterChildren(CtFor.class::isInstance).first();
+			ctFor.getForInit().forEach(CtElement::delete);
+		};
+		BiConsumer<CtType<?>, String> assertNotStaticFindFirstIsEmpty = (type, result) ->
+            assertThat(result, containsString("for (; i < 10; i++)"));
+
+		testSniper("ForLoop", deleteForUpdate, assertNotStaticFindFirstIsEmpty);
+	}
+
+	@Test
+	void testSniperRespectsDeletionInForUpdate() {
+		// contract: The sniper printer should detect deletions in for loop update as modifications
+		// and print the model accordingly.
+
+		Consumer<CtType<?>> deleteForUpdate = type -> {
+			CtFor ctFor = type.filterChildren(CtFor.class::isInstance).first();
+			ctFor.getForUpdate().forEach(CtElement::delete);
+		};
+		BiConsumer<CtType<?>, String> assertNotStaticFindFirstIsEmpty = (type, result) ->
+				assertThat(result, containsString("for (int i = 0; i < 10;)"));
+
+		testSniper("ForLoop", deleteForUpdate, assertNotStaticFindFirstIsEmpty);
+	}
+
 	/**
 	 * 1) Runs spoon using sniper mode,
 	 * 2) runs `typeChanger` to modify the code,
@@ -888,8 +897,8 @@ public class TestSniperPrinter {
 					assertTrue(result.length() > 0);
 				}
 
-				assertTrue("ToString() on element (" + el.getClass().getName() + ") =  \"" + el + "\" is not in original content",
-						originalContent.contains(result.replace("\t", "")));
+				assertTrue(originalContent.contains(result.replace("\t", "")),
+						"ToString() on element (" + el.getClass().getName() + ") =  \"" + el + "\" is not in original content");
 			} catch (UnsupportedOperationException | SpoonException e) {
 				//Printer should not throw exception on printable element. (Unless there is a bug in the printer...)
 				fail("ToString() on Element (" + el.getClass().getName() + "): at " + el.getPath() + " lead to an exception: " + e);
@@ -901,5 +910,4 @@ public class TestSniperPrinter {
 	public void testToStringWithSniperOnElementScan() throws Exception {
 		testToStringWithSniperPrinter("src/test/java/spoon/test/prettyprinter/testclasses/ElementScan.java");
 	}
-
 }

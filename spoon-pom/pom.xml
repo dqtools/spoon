@@ -25,39 +25,31 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <repositories>
-        <repository>
-            <id>ow2.org-snapshot</id>
-            <name>Maven Repository for Spoon Snapshots</name>
-            <url>https://repository.ow2.org/nexus/content/repositories/snapshots/</url>
-        </repository>
-    </repositories>
-
     <dependencies>
 
         <!-- we all depend on Junit with scope=test -->
         <dependency>
             <groupId>org.junit.vintage</groupId>
             <artifactId>junit-vintage-engine</artifactId>
-            <version>5.7.1</version>
+            <version>5.7.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
           <groupId>org.mockito</groupId>
           <artifactId>mockito-core</artifactId>
-          <version>3.8.0</version>
+          <version>3.10.0</version>
           <scope>test</scope>
         </dependency>
  	<dependency>
  		<groupId>org.junit.jupiter</groupId>
  		<artifactId>junit-jupiter-engine</artifactId>
- 		<version>5.7.1</version>
+ 		<version>5.7.2</version>
  		<scope>test</scope>
 	</dependency>
     <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter-params</artifactId>
-        <version>5.7.1</version>
+        <version>5.7.2</version>
         <scope>test</scope>
     </dependency>
 
@@ -244,14 +236,18 @@
                 <plugin>
                     <groupId>com.mycila</groupId>
                     <artifactId>license-maven-plugin</artifactId>
-                    <version>3.0</version>
+                    <version>4.1</version>
                     <configuration>
-                        <header>LICENSE-short.txt</header>
-                        <includes>
-                            <include>src/main/java/**</include>
-                            <!-- We also want to check the license in templates to generate files with the proper header -->
-                            <include>src/test/java/spoon/generating/clone/*</include>
-                        </includes>
+                        <licenseSets>
+                            <licenseSet>
+                                <header>LICENSE-short.txt</header>
+                                <includes>
+                                    <include>src/main/java/**</include>
+                                    <!-- We also want to check the license in templates to generate files with the proper header -->
+                                    <include>src/test/java/spoon/generating/clone/*</include>
+                                </includes>
+                            </licenseSet>
+                        </licenseSets>
                         <excludes>
 		            <!--  excluding the code coming from Javaparser -->
 		            <exclude>src/main/java/spoon/javadoc/internal/*</exclude>
@@ -288,7 +284,7 @@
                 <!-- There is another block maven-javadoc-plugin below -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.3.0</version>
                 <configuration>
                     <!-- see https://stackoverflow.com/a/57430117 -->
                     <doclint>none</doclint>
@@ -351,7 +347,7 @@
                         <!-- Warning: there is another block maven-javadoc-plugin above -->
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.2.0</version>
+                        <version>3.3.0</version>
                         <configuration>
                             <doclint>none</doclint>
                         </configuration>
@@ -368,7 +364,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>1.6</version>
+                        <version>3.0.1</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>

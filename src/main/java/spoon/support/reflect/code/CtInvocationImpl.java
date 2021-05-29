@@ -1,4 +1,4 @@
-/**
+/*
  * SPDX-License-Identifier: (MIT OR CECILL-C)
  *
  * Copyright (C) 2006-2019 INRIA and contributors
@@ -67,6 +67,11 @@ public class CtInvocationImpl<T> extends CtTargetedExpressionImpl<T, CtExpressio
 	@Override
 	public <C extends CtAbstractInvocation<T>> C addArgument(CtExpression<?> argument) {
 		return addArgument(arguments.size(), argument);
+	}
+
+	@Override
+	public <C extends CtAbstractInvocation<T>> C addArgumentAt(int position, CtExpression<?> argument) {
+		return addArgument(position, argument);
 	}
 
 	@Override

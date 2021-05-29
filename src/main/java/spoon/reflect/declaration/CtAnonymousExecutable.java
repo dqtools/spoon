@@ -1,4 +1,4 @@
-/**
+/*
  * SPDX-License-Identifier: (MIT OR CECILL-C)
  *
  * Copyright (C) 2006-2019 INRIA and contributors
@@ -41,6 +41,10 @@ public interface CtAnonymousExecutable extends CtExecutable<Void>, CtTypeMember 
 	@Override
 	@UnsettableProperty
 	<T extends CtExecutable<Void>> T addParameter(CtParameter<?> parameter);
+
+	@Override
+	@UnsettableProperty
+	<T extends CtExecutable<Void>> T addParameterAt(int position, CtParameter<?> parameter);
 
 	@Override
 	@UnsettableProperty
