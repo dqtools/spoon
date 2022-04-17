@@ -7,10 +7,16 @@
  */
 package spoon.test.prettyprinter;
 
+import org.apache.commons.io.FileUtils;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import spoon.Launcher;
 import spoon.SpoonException;
+import spoon.compiler.Environment;
+import spoon.processing.AbstractProcessor;
 import spoon.refactoring.Refactoring;
 import spoon.reflect.CtModel;
 import spoon.reflect.code.CtConstructorCall;
@@ -21,6 +27,9 @@ import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLocalVariable;
 import spoon.reflect.code.CtStatement;
 import spoon.reflect.code.CtThrow;
+import spoon.reflect.code.CtTryWithResource;
+import spoon.reflect.cu.SourcePosition;
+import spoon.reflect.declaration.CtAnnotation;
 import spoon.reflect.declaration.CtClass;
 import spoon.reflect.declaration.CtCompilationUnit;
 import spoon.reflect.declaration.CtElement;
@@ -32,7 +41,6 @@ import spoon.reflect.declaration.CtPackage;
 import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.ModifierKind;
 import spoon.reflect.factory.Factory;
-import spoon.reflect.path.CtRole;
 import spoon.reflect.reference.CtExecutableReference;
 import spoon.reflect.reference.CtReference;
 import spoon.reflect.reference.CtTypeReference;
@@ -40,6 +48,7 @@ import spoon.reflect.visitor.filter.TypeFilter;
 import spoon.support.modelobs.ChangeCollector;
 import spoon.support.modelobs.SourceFragmentCreator;
 import spoon.support.sniper.SniperJavaPrettyPrinter;
+import spoon.test.GitHubIssue;
 import spoon.test.prettyprinter.testclasses.OneLineMultipleVariableDeclaration;
 import spoon.test.prettyprinter.testclasses.Throw;
 import spoon.test.prettyprinter.testclasses.InvocationReplacement;
@@ -53,6 +62,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
@@ -60,11 +70,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import static org.hamcrest.CoreMatchers.allOf;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.anyOf;
-import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -773,6 +784,163 @@ public class TestSniperPrinter {
 		testSniper("ForLoop", deleteForUpdate, assertNotStaticFindFirstIsEmpty);
 	}
 
+	@GitHubIssue(issueNumber = 4021, fixed = true)
+	void testSniperRespectsSuperWithUnaryOperator() {
+		// Combining CtSuperAccess and CtUnaryOperator leads to SpoonException with Sniper
+
+		// Noop
+		Consumer<CtType<?>> deleteForUpdate = type -> {};
+
+		BiConsumer<CtType<?>, String> assertContainsSuperWithUnaryOperator = (type, result) ->
+				assertThat(result, containsString("super.a(-x);"));
+
+		testSniper("superCall.SuperCallSniperTestClass", deleteForUpdate, assertContainsSuperWithUnaryOperator);
+	}
+
+	@GitHubIssue(issueNumber = 3911, fixed = false)
+	void testRoundBracketPrintingInComplexArithmeticExpression() {
+		Consumer<CtType<?>> noOpModifyFieldAssignment = type ->
+				type.getField("value")
+						.getAssignment()
+						.descendantIterator()
+						.forEachRemaining(TestSniperPrinter::markElementForSniperPrinting);
+
+		BiConsumer<CtType<?>, String> assertPrintsRoundBracketsCorrectly = (type, result) ->
+				assertThat(result, containsString("((double) (3 / 2)) / 2"));
+
+		testSniper("ArithmeticExpression", noOpModifyFieldAssignment, assertPrintsRoundBracketsCorrectly);
+	}
+
+	@GitHubIssue(issueNumber = 4218, fixed = false)
+	void testSniperDoesNotPrintTheDeletedAnnotation() {
+		Consumer<CtType<?>> deleteAnnotation = type -> {
+			type.getAnnotations().forEach(CtAnnotation::delete);
+		};
+
+		BiConsumer<CtType<?>, String> assertDoesNotContainAnnotation = (type, result) ->
+				assertThat(result, not(containsString("@abc.def.xyz")));
+
+		testSniper("sniperPrinter.DeleteAnnotation", deleteAnnotation, assertDoesNotContainAnnotation);
+	}
+
+	@GitHubIssue(issueNumber = 4220, fixed = true)
+	void testSniperAddsSpaceAfterFinal() {
+		Consumer<CtType<?>> modifyField = type -> {
+			Factory factory = type.getFactory();
+			CtField field = type.filterChildren(CtField.class::isInstance).first();
+			field.setType(factory.Type().integerType());
+		};
+
+		BiConsumer<CtType<?>, String> assertContainsSpaceAfterFinal = (type, result) ->
+				assertThat(result, containsString("private static final java.lang.Integer x;"));
+
+		testSniper("sniperPrinter.SpaceAfterFinal", modifyField, assertContainsSpaceAfterFinal);
+	}
+
+	@Nested
+	class ResourcePrintingInTryWithResourceStatement{
+		private CtTryWithResource getTryWithResource(CtType<?> type) {
+			return type.getMethodsByName("resourcePrinting").get(0).getBody().getStatement(0);
+		}
+
+		@Test
+		void test_printSecondResourceExactlyOnce() {
+			// contract: sniper should print the second resource exactly once
+			Consumer<CtType<?>> noOpModifyTryWithResource = type ->
+					TestSniperPrinter.markElementForSniperPrinting(getTryWithResource(type));
+
+			BiConsumer<CtType<?>, String> assertPrintsResourcesCorrectly = (type, result) ->
+					assertThat(result, containsString(" try (ZipFile zf = new ZipFile(zipFileName);\n" +
+							"             BufferedWriter writer = newBufferedWriter(outputFilePath, charset))"));
+
+			testSniper("sniperPrinter.tryWithResource.PrintOnce", noOpModifyTryWithResource, assertPrintsResourcesCorrectly);
+		}
+
+		@Test
+		void test_retainSemiColonAfterTheLastResource() {
+			// contract: sniper should retain the semi-colon after second resource
+			Consumer<CtType<?>> noOpModifyTryWithResource = type ->
+					TestSniperPrinter.markElementForSniperPrinting(getTryWithResource(type));
+
+			BiConsumer<CtType<?>, String> assertPrintsResourcesCorrectly = (type, result) ->
+					assertThat(result, containsString(" try (ZipFile zf = new ZipFile(zipFileName);\n" +
+							"             BufferedWriter writer = newBufferedWriter(outputFilePath, charset);)"));
+
+			testSniper("sniperPrinter.tryWithResource.RetainSemiColon", noOpModifyTryWithResource, assertPrintsResourcesCorrectly);
+		}
+	}
+
+	@Nested
+
+	class SquareBracketPrintingInArrayInitialisation {
+		// contract: square brackets should be printed *only* after the identifier of the field or local variable
+
+		private Consumer<CtType<?>> markFieldForSniperPrinting() {
+			return type -> {
+				CtField<?> field = type.getField("array");
+				TestSniperPrinter.markElementForSniperPrinting(field.getType());
+			};
+		}
+
+		private BiConsumer<CtType<?>, String> assertPrintsBracketForArrayInitialisation(String arrayDeclaration) {
+			return (type, result) ->
+					assertThat(result, containsString(arrayDeclaration));
+		}
+
+		@GitHubIssue(issueNumber = 4315, fixed = true)
+		void test_bracketShouldBePrintedWhenArrayIsNull() {
+			testSniper(
+					"sniperPrinter.arrayInitialisation.ToNull",
+					markFieldForSniperPrinting(),
+					assertPrintsBracketForArrayInitialisation("int array[];"));
+		}
+
+		@GitHubIssue(issueNumber = 4315, fixed = true)
+		void test_bracketShouldBePrintedWhenArrayIsInitialisedToIntegers() {
+			testSniper(
+					"sniperPrinter.arrayInitialisation.FiveIntegers",
+					markFieldForSniperPrinting(),
+					assertPrintsBracketForArrayInitialisation("int array[] = {1, 2, 3, 4, 5};"));
+		}
+
+		@GitHubIssue(issueNumber = 4315, fixed = true)
+		void test_bracketShouldBePrintedWhenArrayIsInitialisedToNullElements() {
+			testSniper(
+					"sniperPrinter.arrayInitialisation.ToNullElements",
+					markFieldForSniperPrinting(),
+					assertPrintsBracketForArrayInitialisation("String array[] = new String[42];"));
+		}
+
+		@GitHubIssue(issueNumber = 4315, fixed = true)
+		void test_bracketsShouldBePrintedForMultiDimensionalArray() {
+			testSniper(
+					"sniperPrinter.arrayInitialisation.MultiDimension",
+					markFieldForSniperPrinting(),
+					assertPrintsBracketForArrayInitialisation("String array[][][] = new String[1][2][3];"));
+		}
+
+		@GitHubIssue(issueNumber = 4315, fixed = true)
+		void test_bracketsShouldBePrintedForArrayInitialisedInLocalVariable() {
+			Consumer<CtType<?>> noOpModifyLocalVariable = type -> {
+				CtMethod<?> method = type.getMethod("doNothing");
+				TestSniperPrinter.markElementForSniperPrinting(method.getBody().getStatement(0));
+			};
+
+			testSniper(
+					"sniperPrinter.arrayInitialisation.AsLocalVariable",
+					noOpModifyLocalVariable,
+					assertPrintsBracketForArrayInitialisation("int array[] = new int[]{ };"));
+		}
+
+		@GitHubIssue(issueNumber = 4421, fixed = true)
+		void test_bracketsShouldBePrintedForGenericTypeOfArray() {
+			testSniper(
+					"sniperPrinter.arrayInitialisation.GenericTypeArray",
+					markFieldForSniperPrinting(),
+					assertPrintsBracketForArrayInitialisation("Class<?> array[];"));
+		}
+	}
+
 	/**
 	 * 1) Runs spoon using sniper mode,
 	 * 2) runs `typeChanger` to modify the code,
@@ -787,16 +955,16 @@ public class TestSniperPrinter {
 		launcher.buildModel();
 		Factory f = launcher.getFactory();
 
-		final CtClass<?> ctClass = f.Class().get(testClass);
+		final CtType<?> ctType = f.Type().get(testClass);
 
 		//change the model
-		transformation.accept(ctClass);
+		transformation.accept(ctType);
 
 		//print the changed model
 		launcher.prettyprint();
 
 		//check the printed file
-		resultChecker.accept(ctClass, getContentOfPrettyPrintedClassFromDisk(ctClass));
+		resultChecker.accept(ctType, getContentOfPrettyPrintedClassFromDisk(ctType));
 	}
 
 	private static Launcher createLauncherWithSniperPrinter() {
@@ -909,5 +1077,55 @@ public class TestSniperPrinter {
 	@Test
 	public void testToStringWithSniperOnElementScan() throws Exception {
 		testToStringWithSniperPrinter("src/test/java/spoon/test/prettyprinter/testclasses/ElementScan.java");
+	}
+
+	/**
+	 * Files to be tested with testNoChangeDiff
+	 */
+	private static Stream<File> noChangeDiffTestFiles() {
+		Path path = Paths.get("src/test/java/spoon/test/prettyprinter/testclasses/difftest");
+		return FileUtils.listFiles(path.toFile(), null, false).stream();
+	}
+
+	/**
+	 * Test various syntax by doing an change to every element that should not
+	 * result in any change in source. This forces the sniper printer to recreate
+	 * the output. Assert that the output is the same as the input.
+	 *
+	 * Reference: #3811
+	 */
+	@ParameterizedTest
+	@MethodSource("noChangeDiffTestFiles")
+	@GitHubIssue(issueNumber = 3811, fixed = false)
+	public void testNoChangeDiff(File file) throws IOException {
+		String fileName = file.getName();
+		Path outputPath = Paths.get("target/test-output");
+		File outputFile = outputPath.resolve("spoon/test/prettyprinter/testclasses/difftest")
+				.resolve(fileName).toFile();
+		final Launcher launcher = new Launcher();
+		final Environment e = launcher.getEnvironment();
+		e.setLevel("INFO");
+		e.setPrettyPrinterCreator(() -> new SniperJavaPrettyPrinter(e));
+
+		launcher.addInputResource(file.toString());
+		launcher.setSourceOutputDirectory(outputPath.toString());
+		launcher.addProcessor(new AbstractProcessor<>() {
+			public void process(CtElement element) {
+				markElementForSniperPrinting(element);
+			}
+		});
+		launcher.run();
+
+		assertTrue(FileUtils.contentEquals(file, outputFile),"File " + outputFile.getAbsolutePath() + " is different");
+	}
+
+	/**
+	 * Modify an element such that the sniper printer detects it as modified, without changing its final content. This
+	 * forces it to be sniper-printed "as-is".
+	 */
+	private static void markElementForSniperPrinting(CtElement element) {
+		SourcePosition pos = element.getPosition();
+		element.setPosition(SourcePosition.NOPOSITION);
+		element.setPosition(pos);
 	}
 }

@@ -48,6 +48,7 @@ import spoon.reflect.code.CtVariableAccess;
 import spoon.reflect.declaration.CtClass;
 import spoon.reflect.declaration.CtExecutable;
 import spoon.reflect.declaration.CtField;
+import spoon.reflect.declaration.CtInterface;
 import spoon.reflect.declaration.CtModule;
 import spoon.reflect.declaration.CtModuleRequirement;
 import spoon.reflect.declaration.CtPackageExport;
@@ -73,6 +74,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.StringJoiner;
 
 import static spoon.support.compiler.jdt.JDTTreeBuilderQuery.getModifiers;
 import static spoon.support.compiler.jdt.JDTTreeBuilderQuery.isLhsAssignment;
@@ -104,12 +106,11 @@ public class JDTTreeBuilderHelper {
 	 * @return Qualified name.
 	 */
 	static String createQualifiedTypeName(char[][] typeName) {
-		StringBuilder s = new StringBuilder();
-		for (int i = 0; i < typeName.length - 1; i++) {
-			s.append(CharOperation.charToString(typeName[i])).append(".");
+		StringJoiner joiner = new StringJoiner(".");
+		for (char[] typeNamePart : typeName) {
+			joiner.add(CharOperation.charToString(typeNamePart));
 		}
-		s.append(CharOperation.charToString(typeName[typeName.length - 1]));
-		return s.toString();
+		return joiner.toString();
 	}
 
 	/**
@@ -121,7 +122,7 @@ public class JDTTreeBuilderHelper {
 	 */
 	CtCatchVariable<Throwable> createCatchVariable(TypeReference typeReference, Scope scope) {
 		final Argument jdtCatch = (Argument) jdtTreeBuilder.getContextBuilder().stack.peekFirst().node;
-		final Set<CtExtendedModifier> modifiers = getModifiers(jdtCatch.modifiers, false, false);
+		final Set<CtExtendedModifier> modifiers = getModifiers(jdtCatch.modifiers, false, ModifierTarget.LOCAL_VARIABLE);
 
 		CtCatchVariable<Throwable> result = jdtTreeBuilder.getFactory().Core().createCatchVariable();
 		result.<CtCatchVariable>setSimpleName(CharOperation.charToString(jdtCatch.name)).setExtendedModifiers(modifiers);
@@ -561,34 +562,6 @@ public class JDTTreeBuilderHelper {
 		}
 	}
 
-//
-//	private boolean isFullyQualified(QualifiedNameReference qualifiedNameReference) {
-//		char[][] tokens = qualifiedNameReference.tokens;
-//		PackageBinding packageBinding = qualifiedNameReference.actualReceiverType.getPackage();
-//		char[][] packageNames = null;
-//		if (packageBinding != null) {
-//			packageNames = packageBinding.compoundName;
-//		}
-//		int idx = 0;
-//		if (packageNames != null) {
-//			while (idx < packageNames.length) {
-//				if (idx >= tokens.length) {
-//					return false;
-//				}
-//				if (!Arrays.equals(tokens[idx], packageNames[idx])) {
-//					return false;
-//				}
-//				idx++;
-//			}
-//		}
-//		if (idx >= tokens.length) {
-//			return false;
-//		}
-//		if (!Arrays.equals(tokens[idx], qualifiedNameReference.actualReceiverType.sourceName())) {
-//			return false;
-//		}
-//		return true;
-//	}
 
 	/**
 	 * Creates a type access from its qualified name.
@@ -687,7 +660,7 @@ public class JDTTreeBuilderHelper {
 		CtParameter<T> p = jdtTreeBuilder.getFactory().Core().createParameter();
 		p.setSimpleName(CharOperation.charToString(argument.name));
 		p.setVarArgs(argument.isVarArgs());
-		p.setExtendedModifiers(getModifiers(argument.modifiers, false, false));
+		p.setExtendedModifiers(getModifiers(argument.modifiers, false, ModifierTarget.PARAMETER));
 		if (argument.binding != null && argument.binding.type != null && argument.type == null) {
 			p.setType(jdtTreeBuilder.getReferencesBuilder().<T>getTypeReference(argument.binding.type));
 			p.getType().setImplicit(argument.type == null);
@@ -733,12 +706,19 @@ public class JDTTreeBuilderHelper {
 			type = jdtTreeBuilder.getFactory().Core().createEnum();
 		} else if ((typeDeclaration.modifiers & ClassFileConstants.AccInterface) != 0) {
 			type = jdtTreeBuilder.getFactory().Core().createInterface();
-		} else {
+		} else if (typeDeclaration.isRecord()) {
+			type = jdtTreeBuilder.getFactory().Core().createRecord();
+		}	else {
 			type = jdtTreeBuilder.getFactory().Core().createClass();
 		}
 
 		// Setting modifiers
-		type.setExtendedModifiers(getModifiers(typeDeclaration.modifiers, false, false));
+		if (typeDeclaration.binding != null) {
+			type.setExtendedModifiers(getModifiers(typeDeclaration.binding.modifiers, true, ModifierTarget.TYPE));
+		}
+		for (CtExtendedModifier modifier : getModifiers(typeDeclaration.modifiers, false, ModifierTarget.TYPE)) {
+			type.addModifier(modifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
+		}
 
 		jdtTreeBuilder.getContextBuilder().enter(type, typeDeclaration);
 
@@ -749,15 +729,13 @@ public class JDTTreeBuilderHelper {
 			}
 		}
 
-		if (type instanceof CtClass) {
-			if (typeDeclaration.superclass != null) {
-				((CtClass) type).setSuperclass(jdtTreeBuilder.references.buildTypeReference(typeDeclaration.superclass, typeDeclaration.scope));
-			}
-			if (typeDeclaration.binding != null && (typeDeclaration.binding.isAnonymousType() || (typeDeclaration.binding instanceof LocalTypeBinding && typeDeclaration.binding.enclosingMethod() != null))) {
-				type.setSimpleName(computeAnonymousName(typeDeclaration.binding.constantPoolName()));
-			} else {
-				type.setSimpleName(new String(typeDeclaration.name));
-			}
+		if (type instanceof CtClass && typeDeclaration.superclass != null) {
+			((CtClass) type).setSuperclass(jdtTreeBuilder.references.buildTypeReference(typeDeclaration.superclass, typeDeclaration.scope));
+		}
+		if ((type instanceof CtClass || type instanceof CtInterface)
+				&& typeDeclaration.binding != null
+				&& (typeDeclaration.binding.isAnonymousType() || typeDeclaration.binding instanceof LocalTypeBinding && typeDeclaration.binding.enclosingMethod() != null)) {
+			type.setSimpleName(computeAnonymousName(typeDeclaration.binding.constantPoolName()));
 		} else {
 			type.setSimpleName(new String(typeDeclaration.name));
 		}

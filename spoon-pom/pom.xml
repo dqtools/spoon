@@ -6,7 +6,8 @@
     You as the user are entitled to choose the terms under which to adopt Spoon.
 
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>fr.inria.gforge.spoon</groupId>
@@ -19,57 +20,56 @@
     <inceptionYear>2007</inceptionYear>
 
     <properties>
-        <java.src.version>1.8</java.src.version>
-        <java.test.version>1.8</java.test.version>
+        <maven.compiler.release>11</maven.compiler.release>
         <runtime.log>target/velocity.log</runtime.log>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.build.outputTimestamp>1</project.build.outputTimestamp>
     </properties>
 
     <dependencies>
 
         <!-- we all depend on Junit with scope=test -->
         <dependency>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
-            <version>5.7.2</version>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>4.4.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-          <groupId>org.mockito</groupId>
-          <artifactId>mockito-core</artifactId>
-          <version>3.10.0</version>
-          <scope>test</scope>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.8.2</version>
+            <scope>test</scope>
         </dependency>
- 	<dependency>
- 		<groupId>org.junit.jupiter</groupId>
- 		<artifactId>junit-jupiter-engine</artifactId>
- 		<version>5.7.2</version>
- 		<scope>test</scope>
-	</dependency>
-    <dependency>
-        <groupId>org.junit.jupiter</groupId>
-        <artifactId>junit-jupiter-params</artifactId>
-        <version>5.7.2</version>
-        <scope>test</scope>
-    </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>5.8.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.8.2</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
-            <version>3.11.0</version>
+            <version>4.4.0</version>
             <scope>test</scope>
         </dependency>
 
-  <dependency>
-    <!-- must come after junit5 deps, otherwise it overrides the junit version -->
-    <!-- must be here in the parent POM, because the parent always comes last, see https://stackoverflow.com/questions/28999057/order-of-inherited-dependencies-in-maven-3 -->
-    <groupId>com.github.stefanbirkner</groupId>
-    <artifactId>system-rules</artifactId>
-    <version>1.19.0</version>
-    <scope>test</scope>
-  </dependency>
-  
+        <dependency>
+            <!-- must come after junit5 deps, otherwise it overrides the junit version -->
+            <!-- must be here in the parent POM, because the parent always comes last, see https://stackoverflow.com/questions/28999057/order-of-inherited-dependencies-in-maven-3 -->
+            <groupId>com.github.stefanbirkner</groupId>
+            <artifactId>system-rules</artifactId>
+            <version>1.19.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
-        
+
     <organization>
         <name>Inria</name>
         <url>http://www.inria.fr</url>
@@ -109,8 +109,13 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.2.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.0.0-M5</version>
+                <version>3.0.0-M6</version>
                 <configuration>
                     <!-- "If you want to use a basic plain old Java classpath, [...] set useManifestOnlyJar=false and useSystemClassLoader=true".
                     https://maven.apache.org/surefire/maven-surefire-plugin/examples/class-loading.html -->
@@ -122,7 +127,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
+                <version>3.10.1</version>
                 <configuration>
                     <source>${java.src.version}</source>
                     <target>${java.src.version}</target>
@@ -138,6 +143,13 @@
                     <!-- useIncrementalCompilation=false actually means that we won't recompile everything each time -->
                     <!-- it's not a joke, test by yourself :-) -->
                     <useIncrementalCompilation>false</useIncrementalCompilation>
+                    <annotationProcessorPaths>
+                        <annotationProcessorPath>
+                            <groupId>org.kohsuke.metainf-services</groupId>
+                            <artifactId>metainf-services</artifactId>
+                            <version>1.9</version>
+                        </annotationProcessorPath>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
 
@@ -161,7 +173,7 @@
                     <dependency>
                         <groupId>org.apache.maven.wagon</groupId>
                         <artifactId>wagon-ssh</artifactId>
-                        <version>3.4.3</version>
+                        <version>3.5.1</version>
                     </dependency>
                 </dependencies>
             </plugin>
@@ -170,7 +182,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.1.2</version>
+                <version>3.3.0</version>
                 <executions>
                     <execution>
                         <id>copy-dependencies</id>
@@ -232,7 +244,7 @@
                                         </goals>
                                     </pluginExecutionFilter>
                                     <action>
-                                        <ignore />
+                                        <ignore/>
                                     </action>
                                 </pluginExecution>
                             </pluginExecutions>
@@ -255,8 +267,8 @@
                             </licenseSet>
                         </licenseSets>
                         <excludes>
-		            <!--  excluding the code coming from Javaparser -->
-		            <exclude>src/main/java/spoon/javadoc/internal/*</exclude>
+                            <!--  excluding the code coming from Javaparser -->
+                            <exclude>src/main/java/spoon/javadoc/internal/*</exclude>
                         </excludes>
                     </configuration>
                     <executions>
@@ -290,11 +302,13 @@
                 <!-- There is another block maven-javadoc-plugin below -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.3.2</version>
                 <configuration>
                     <!-- see https://stackoverflow.com/a/57430117 -->
                     <doclint>none</doclint>
                     <detectJavaApiLink>false</detectJavaApiLink>
+                    <!-- ref: https://github.com/INRIA/spoon/pull/4253 -->
+                    <additionalJOption>-notimestamp</additionalJOption>
                 </configuration>
                 <reportSets>
                     <reportSet>
@@ -323,10 +337,9 @@
                                 <artifactId>jaxb-api</artifactId>
                                 <version>2.3.1</version>
                             </dependency>
-                        </dependencies>		
+                        </dependencies>
                     </plugin>
 
-                
 
                 </plugins>
             </build>
@@ -353,7 +366,7 @@
                         <!-- Warning: there is another block maven-javadoc-plugin above -->
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.3.0</version>
+                        <version>3.3.2</version>
                         <configuration>
                             <doclint>none</doclint>
                         </configuration>

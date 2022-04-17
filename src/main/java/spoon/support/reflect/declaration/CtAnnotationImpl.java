@@ -339,9 +339,7 @@ public class CtAnnotationImpl<A extends Annotation> extends CtExpressionImpl<A> 
 
 	public Map<String, Object> getElementValues() {
 		Map<String, Object> res = new TreeMap<>();
-		for (Entry<String, CtExpression> elementValue : elementValues.entrySet()) {
-			res.put(elementValue.getKey(), elementValue.getValue());
-		}
+		res.putAll(elementValues);
 		return res;
 	}
 
@@ -352,7 +350,7 @@ public class CtAnnotationImpl<A extends Annotation> extends CtExpressionImpl<A> 
 
 	@Override
 	public Map<String, CtExpression> getAllValues() {
-		Map<String, CtExpression> values = new TreeMap();
+		Map<String, CtExpression> values = new TreeMap<>();
 		// first, we put the default values
 		CtAnnotationType<?> annotationType = (CtAnnotationType) getAnnotationType().getTypeDeclaration();
 		for (CtAnnotationMethod m : annotationType.getAnnotationMethods()) {
@@ -471,5 +469,10 @@ public class CtAnnotationImpl<A extends Annotation> extends CtExpressionImpl<A> 
 	@UnsettableProperty
 	public <C extends CtExpression<A>> C setTypeCasts(List<CtTypeReference<?>> casts) {
 		return (C) this;
+	}
+
+	@Override
+	public String getName() {
+		return getAnnotationType().getSimpleName();
 	}
 }

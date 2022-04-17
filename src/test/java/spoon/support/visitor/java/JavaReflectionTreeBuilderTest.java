@@ -16,12 +16,41 @@
  */
 package spoon.support.visitor.java;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static spoon.testing.utils.ModelUtils.createFactory;
+import java.io.File;
+import java.io.ObjectInputStream;
+import java.lang.annotation.Retention;
+import java.net.CookieManager;
+import java.net.URLClassLoader;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import com.mysema.query.support.ProjectableQuery;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 import spoon.Launcher;
 import spoon.SpoonException;
-import spoon.metamodel.MetamodelConcept;
 import spoon.metamodel.Metamodel;
+import spoon.metamodel.MetamodelConcept;
 import spoon.reflect.code.CtConditional;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtLambda;
@@ -39,7 +68,9 @@ import spoon.reflect.declaration.CtField;
 import spoon.reflect.declaration.CtInterface;
 import spoon.reflect.declaration.CtMethod;
 import spoon.reflect.declaration.CtModifiable;
+import spoon.reflect.declaration.CtPackage;
 import spoon.reflect.declaration.CtParameter;
+import spoon.reflect.declaration.CtRecord;
 import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.CtTypeMember;
 import spoon.reflect.declaration.CtTypeParameter;
@@ -64,32 +95,10 @@ import spoon.support.reflect.declaration.CtFieldImpl;
 import spoon.support.visitor.equals.EqualsChecker;
 import spoon.support.visitor.equals.EqualsVisitor;
 import spoon.test.generics.testclasses3.ComparableComparatorBug;
-
-import java.io.File;
-import java.io.ObjectInputStream;
-import java.lang.annotation.Retention;
-import java.net.CookieManager;
-import java.net.URLClassLoader;
-import java.time.format.TextStyle;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static spoon.testing.utils.ModelUtils.createFactory;
+import spoon.test.pkg.PackageTest;
+import spoon.test.pkg.cyclic.Outside;
+import spoon.test.pkg.cyclic.direct.Cyclic;
+import spoon.test.pkg.cyclic.indirect.Indirect;
 
 public class JavaReflectionTreeBuilderTest {
 
@@ -208,7 +217,7 @@ public class JavaReflectionTreeBuilderTest {
 			allProblems.addAll(checkShadowTypeIsEqual(concept.getImplementationClass()));
 			allProblems.addAll(checkShadowTypeIsEqual(concept.getMetamodelInterface()));
 		}
-		assertTrue("Found " + allProblems.size() + " problems:\n" + String.join("\n", allProblems), allProblems.isEmpty());
+		assertTrue(allProblems.isEmpty(), "Found " + allProblems.size() + " problems:\n" + String.join("\n", allProblems));
 	}
 
 	private List<String> checkShadowTypeIsEqual(CtType<?> type) {
@@ -422,7 +431,7 @@ public class JavaReflectionTreeBuilderTest {
 						parentOf = diff.element.getParent();
 						rootOf = type;
 					}
-					differences.add("Diff on path: " + pathBuilder.fromElement(parentOf, rootOf).toString() + "#"
+					differences.add("Diff on path: " + pathBuilder.fromElement(rootOf, parentOf).toString() + "#"
 					+ diff.roles.stream().map(CtRole::getCamelCaseName).collect(Collectors.joining(", ", "[", "]"))
 					+ "\nShadow: " + String.valueOf(diff.other)
 					+ "\nNormal: " + String.valueOf(diff.element) + "\n");
@@ -501,11 +510,11 @@ public class JavaReflectionTreeBuilderTest {
 		CtTypeReference<?> aTypeRef = typeFactory.createReference(CtExpression.class);
 		CtType aType = aTypeRef.getTypeDeclaration();
 		for (CtTypeReference<?> ifaceRef : aType.getSuperInterfaces()) {
-			assertNotNull(ifaceRef.getQualifiedName() + " doesn't exist?", ifaceRef.getActualClass());
+			assertNotNull(ifaceRef.getActualClass(), ifaceRef.getQualifiedName() + " doesn't exist?");
 			assertSame(aType, ifaceRef.getParent());
 		}
 		for (CtTypeReference<?> ifaceRef : aTypeRef.getSuperInterfaces()) {
-			assertNotNull(ifaceRef.getQualifiedName() + " doesn't exist?", ifaceRef.getActualClass());
+			assertNotNull(ifaceRef.getActualClass(), ifaceRef.getQualifiedName() + " doesn't exist?");
 			assertSame(aType, ifaceRef.getParent());
 		}
 	}
@@ -600,10 +609,11 @@ public class JavaReflectionTreeBuilderTest {
 	@Test
 	public void testInnerClassWithConstructorParameterAnnotated() {
 		Launcher launcher = new Launcher();
-		launcher.addInputResource(JavaReflectionTreeBuilderTest.class
+		launcher.addInputResource(URLDecoder.decode(JavaReflectionTreeBuilderTest.class
 				.getClassLoader()
 				.getResource("annotated-parameter-on-nested-class-constructor/Caller.java")
-				.getPath());
+				.getPath(), 
+				StandardCharsets.UTF_8));
 		launcher.getEnvironment().setSourceClasspath(
 				new String[]{
 						"src/test/resources"
@@ -708,5 +718,45 @@ public class JavaReflectionTreeBuilderTest {
 		value = ctType.getField("VALUE");
 		// should have gotten '1'
 		assertNull(value.getDefaultExpression());
+	}
+
+	@Test
+	@EnabledForJreRange(min = JRE.JAVA_16)
+	public void testShadowRecords() throws ClassNotFoundException {
+		// contract: records are shadowable.
+		Factory factory = 	createFactory();
+		// we need to do this because this a jdk16+ class
+		Class<?> unixDomainPrincipal = Class.forName("jdk.net.UnixDomainPrincipal");
+		CtType<?> type = factory.Type().get(unixDomainPrincipal);
+		assertNotNull(type);
+		CtRecord unixRecord = (CtRecord) type;
+		assertTrue(unixRecord.isShadow());
+		// UserPrincipal user and GroupPrincipal group
+		assertEquals(2, unixRecord.getRecordComponents().size());
+	}
+
+
+	@Test
+	void testShadowPackage() {
+		// contract: elements of a package with a corresponding CtElement implementation
+		// are visited and built into the model
+		Factory factory = createFactory();
+		CtType<?> type = new JavaReflectionTreeBuilder(factory).scan(PackageTest.class);
+		CtPackage ctPackage = type.getPackage();
+		assertEquals(1, ctPackage.getAnnotations().size());
+		assertEquals(ctPackage.getAnnotations().get(0).getAnnotationType().getQualifiedName(), "java.lang.Deprecated");
+	}
+
+	@Test
+	void testCyclicAnnotationScanning() {
+		// contract: scanning annotations does not cause StackOverflowError
+		// due to recursive package -> annotation -> package -> annotation scanning
+		Factory factory = createFactory();
+		// a simple cycle: package a -> annotation a.A -> package a
+		assertDoesNotThrow(() -> new JavaReflectionTreeBuilder(factory).scan(Cyclic.class));
+		// an indirect cycle: package a -> annotation b.B -> package b -> annotation a.A -> package a
+		assertDoesNotThrow(() -> new JavaReflectionTreeBuilder(factory).scan(Indirect.class));
+		// an independent starting point, causing Cyclic and Indirect to be visited too
+		assertDoesNotThrow(() -> new JavaReflectionTreeBuilder(factory).scan(Outside.class));
 	}
 }

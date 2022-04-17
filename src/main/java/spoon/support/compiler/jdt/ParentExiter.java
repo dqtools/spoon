@@ -58,6 +58,7 @@ import spoon.reflect.code.CtLocalVariable;
 import spoon.reflect.code.CtLoop;
 import spoon.reflect.code.CtNewArray;
 import spoon.reflect.code.CtNewClass;
+import spoon.reflect.code.CtResource;
 import spoon.reflect.code.CtReturn;
 import spoon.reflect.code.CtStatement;
 import spoon.reflect.code.CtSuperAccess;
@@ -70,7 +71,9 @@ import spoon.reflect.code.CtThrow;
 import spoon.reflect.code.CtTry;
 import spoon.reflect.code.CtTryWithResource;
 import spoon.reflect.code.CtTypeAccess;
+import spoon.reflect.code.CtTypePattern;
 import spoon.reflect.code.CtUnaryOperator;
+import spoon.reflect.code.CtVariableRead;
 import spoon.reflect.code.CtWhile;
 import spoon.reflect.code.CtYieldStatement;
 import spoon.reflect.cu.CompilationUnit;
@@ -90,6 +93,8 @@ import spoon.reflect.declaration.CtFormalTypeDeclarer;
 import spoon.reflect.declaration.CtMethod;
 import spoon.reflect.declaration.CtPackage;
 import spoon.reflect.declaration.CtParameter;
+import spoon.reflect.declaration.CtRecord;
+import spoon.reflect.declaration.CtRecordComponent;
 import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.CtTypeParameter;
 import spoon.reflect.declaration.CtTypedElement;
@@ -98,15 +103,19 @@ import spoon.reflect.reference.CtArrayTypeReference;
 import spoon.reflect.reference.CtIntersectionTypeReference;
 import spoon.reflect.reference.CtTypeParameterReference;
 import spoon.reflect.reference.CtTypeReference;
+import spoon.reflect.reference.CtVariableReference;
 import spoon.reflect.reference.CtWildcardReference;
 import spoon.reflect.visitor.CtInheritanceScanner;
 import spoon.reflect.visitor.CtScanner;
+import spoon.reflect.visitor.filter.TypeFilter;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static spoon.reflect.code.BinaryOperatorKind.INSTANCEOF;
 
 @SuppressWarnings("unchecked")
 public class ParentExiter extends CtInheritanceScanner {
@@ -115,7 +124,7 @@ public class ParentExiter extends CtInheritanceScanner {
 
 	private CtElement child;
 	private ASTNode childJDT;
-	private ASTNode parentJDT;
+	private ASTPair parentPair;
 	private Map<CtTypedElement<?>, List<CtAnnotation>> annotationsMap = new HashMap<>();
 
 	/**
@@ -125,16 +134,16 @@ public class ParentExiter extends CtInheritanceScanner {
 		this.jdtTreeBuilder = jdtTreeBuilder;
 	}
 
+	public void exitParent(ASTPair pair) {
+		this.parentPair = pair;
+		scan(pair.element);
+	}
 	public void setChild(CtElement child) {
 		this.child = child;
 	}
 
 	public void setChild(ASTNode child) {
 		this.childJDT = child;
-	}
-
-	public void setParent(ASTNode parent) {
-		this.parentJDT = parent;
 	}
 
 	@Override
@@ -406,6 +415,14 @@ public class ParentExiter extends CtInheritanceScanner {
 
 	@Override
 	public <T> void visitCtBinaryOperator(CtBinaryOperator<T> operator) {
+		CtElement child = this.child;
+		// check if this is a type pattern, as it needs special treatment
+		// patterns are only allowed for instanceof and on the right hand
+		if (child instanceof CtLocalVariable && operator.getKind() == INSTANCEOF && operator.getLeftHandOperand() != null) {
+			CtTypePattern typePattern = child.getFactory().Core().createTypePattern();
+			typePattern.setVariable((CtLocalVariable<?>) child);
+			child = typePattern; // replace the local variable with a pattern (which is a CtExpression)
+		}
 		if (child instanceof CtExpression) {
 			if (operator.getLeftHandOperand() == null) {
 				operator.setLeftHandOperand((CtExpression<?>) child);
@@ -462,7 +479,7 @@ public class ParentExiter extends CtInheritanceScanner {
 		if (node instanceof CaseStatement) {
 			caseStatement.setCaseKind(((CaseStatement) node).isExpr ? CaseKind.ARROW : CaseKind.COLON);
 		}
-		if (node instanceof CaseStatement && ((CaseStatement) node).constantExpression != null && child instanceof CtExpression
+		if (node instanceof CaseStatement && ((CaseStatement) node).constantExpressions != null && child instanceof CtExpression
 				&& caseStatement.getCaseExpressions().size() < ((CaseStatement) node).constantExpressions.length) {
 			caseStatement.addCaseExpression((CtExpression<E>) child);
 			return;
@@ -483,7 +500,7 @@ public class ParentExiter extends CtInheritanceScanner {
 			// Catch annotations are processed before actual CtCatchVariable is created and because of that they attach to CtCatch.
 			// Since annotations cannot be attached to CtCatch itself, we can simply transfer them to CtCatchVariable.
 			catchBlock.getAnnotations().forEach(a -> { a.setParent(child); child.addAnnotation(a); });
-			catchBlock.setAnnotations(Collections.unmodifiableList(Collections.emptyList()));
+			catchBlock.setAnnotations(List.of());
 			return;
 		}
 		super.visitCtCatch(catchBlock);
@@ -640,7 +657,7 @@ public class ParentExiter extends CtInheritanceScanner {
 				child.setPosition(this.child.getPosition());
 			}
 
-			IfStatement ifJDT = (IfStatement) this.parentJDT;
+			IfStatement ifJDT = (IfStatement) this.parentPair.node;
 			if (ifJDT.thenStatement == this.childJDT) {
 				//we are visiting `then` of `if`
 				ifElement.setThenStatement(child);
@@ -838,6 +855,8 @@ public class ParentExiter extends CtInheritanceScanner {
 	public <T, E extends CtExpression<?>> void visitCtExecutableReferenceExpression(CtExecutableReferenceExpression<T, E> expression) {
 		if (child instanceof CtExpression) {
 			expression.setTarget((E) child);
+		} else if (child instanceof CtTypeParameterReference) {
+			expression.getExecutable().addActualTypeArgument((CtTypeReference<?>) child);
 		}
 		super.visitCtExecutableReferenceExpression(expression);
 	}
@@ -958,7 +977,30 @@ public class ParentExiter extends CtInheritanceScanner {
 	@Override
 	public void visitCtTryWithResource(CtTryWithResource tryWithResource) {
 		if (child instanceof CtLocalVariable) {
-			tryWithResource.addResource((CtLocalVariable<?>) child);
+			// normal, happy path of declaring a new variable
+			tryWithResource.addResource((CtLocalVariable) child);
+		} else if (child instanceof CtVariableRead) {
+			// special case of the resource being declared before
+			final CtVariableReference<?> variableRef = ((CtVariableRead<?>) child).getVariable();
+			if (variableRef.getDeclaration() != null) {
+				// getDeclaration works
+				tryWithResource.addResource((CtResource<?>) variableRef.getDeclaration().clone().setImplicit(true));
+			} else {
+				// we have to find it manually
+				for (ASTPair pair: this.jdtTreeBuilder.getContextBuilder().stack) {
+					final List<CtLocalVariable> variables = pair.element.getElements(new TypeFilter<>(CtLocalVariable.class));
+					for (CtLocalVariable v: variables) {
+						if (v.getSimpleName().equals(variableRef.getSimpleName())) {
+							// we found the resource
+							// we clone it in order to comply with the contract of being a tree
+							final CtLocalVariable clone = v.clone();
+							clone.setImplicit(true);
+							tryWithResource.addResource(clone);
+							break;
+						}
+					}
+				}
+			}
 		}
 		super.visitCtTryWithResource(tryWithResource);
 	}
@@ -990,5 +1032,37 @@ public class ParentExiter extends CtInheritanceScanner {
 			return;
 		}
 		super.visitCtYieldStatement(e);
+	}
+
+	@Override
+	public void visitCtTypePattern(CtTypePattern pattern) {
+		if (child instanceof CtLocalVariable) {
+			pattern.setVariable((CtLocalVariable<?>) child);
+		}
+		super.visitCtTypePattern(pattern);
+	}
+
+	@Override
+	public void visitCtRecord(CtRecord recordType) {
+		if (child instanceof CtConstructor) {
+			recordType.addConstructor((CtConstructor) child);
+		}
+		if (child instanceof CtAnonymousExecutable) {
+			recordType.addAnonymousExecutable((CtAnonymousExecutable) child);
+		}
+		if (child instanceof CtRecordComponent) {
+			((CtRecord) recordType).addRecordComponent((CtRecordComponent) child);
+		}
+		super.visitCtRecord(recordType);
+	}
+
+	@Override
+	public void visitCtRecordComponent(CtRecordComponent recordComponent) {
+		if (childJDT instanceof TypeReference && child instanceof CtTypeAccess) {
+			recordComponent.setType(((CtTypeAccess) child).getAccessedType());
+			substituteAnnotation((CtTypedElement) recordComponent);
+			return;
+		}
+		scanCtElement(recordComponent);
 	}
 }

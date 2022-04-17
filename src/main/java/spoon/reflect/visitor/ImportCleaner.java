@@ -13,6 +13,7 @@ import spoon.javadoc.internal.JavadocDescriptionElement;
 import spoon.javadoc.internal.JavadocInlineTag;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtFieldAccess;
+import spoon.reflect.code.CtFieldRead;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtJavaDoc;
 import spoon.reflect.code.CtJavaDocTag;
@@ -36,6 +37,7 @@ import spoon.reflect.visitor.filter.TypeFilter;
 import spoon.support.Experimental;
 import spoon.support.util.ModelList;
 import spoon.support.visitor.ClassTypingContext;
+import spoon.support.visitor.equals.EqualsVisitor;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -84,6 +86,10 @@ public class ImportCleaner extends ImportAnalyzer<ImportCleaner.Context> {
 				context.addImport(((CtFieldAccess) targetedExpression).getVariable().getDeclaringType());
 			}
 			return;
+		}
+
+		if (targetedExpression instanceof CtFieldRead) {
+			context.addImport(((CtFieldRead<?>) targetedExpression).getVariable());
 		}
 
 		if (target.isImplicit()) {
@@ -171,9 +177,21 @@ public class ImportCleaner extends ImportAnalyzer<ImportCleaner.Context> {
 				// we would like to add an import, but we don't know to where
 				return;
 			}
+			if (ref instanceof CtFieldReference<?> && !isReferencePresentInImports(ref)) {
+				return;
+			}
 			CtTypeReference<?> topLevelTypeRef = typeRef.getTopLevelType();
 			if (typeRefQNames.contains(topLevelTypeRef.getQualifiedName())) {
 				//it is reference to a type of this CompilationUnit. Do not add it
+				return;
+			}
+			if (ref instanceof CtTypeReference<?>
+					&& !isReferencePresentInImports(topLevelTypeRef)
+					&& topLevelTypeRef != ref
+					&& !isReferencePresentInImports(ref)) {
+				// check if a top level type has been imported
+				// if it has been, we don't need to add a separate import for its subtype
+				// last condition ensures that if only the subtype has been imported, we do not remove it
 				return;
 			}
 			CtPackageReference packageRef = topLevelTypeRef.getPackage();
@@ -184,7 +202,7 @@ public class ImportCleaner extends ImportAnalyzer<ImportCleaner.Context> {
 				//java.lang is always imported implicitly. Ignore it
 				return;
 			}
-			if (Objects.equals(packageQName, packageRef.getQualifiedName()) && !isStaticExecutableRef(ref)) {
+			if (ref instanceof CtTypeReference && Objects.equals(packageQName, packageRef.getQualifiedName()) && !isStaticExecutableRef(ref)) {
 				//it is reference to a type of the same package. Do not add it
 				return;
 			}
@@ -199,6 +217,28 @@ public class ImportCleaner extends ImportAnalyzer<ImportCleaner.Context> {
 			if (!computedImports.containsKey(importRefID)) {
 				computedImports.put(importRefID, getFactory().Type().createImport(ref));
 			}
+		}
+
+		private boolean isReferencePresentInImports(CtReference ref) {
+			return compilationUnit.getImports()
+					.stream()
+					.anyMatch(ctImport -> ctImport.getReference() != null
+							&& isEqualAfterSkippingRole(ctImport.getReference(), ref, CtRole.TYPE_ARGUMENT));
+		}
+
+		/**
+		 * Checks if element and other are equal if comparison for `role` value is skipped
+		 */
+		private boolean isEqualAfterSkippingRole(CtElement element, CtElement other, CtRole role) {
+			EqualsVisitor equalsVisitor = new EqualsVisitor();
+			boolean isEqual = equalsVisitor.checkEquals(element, other);
+			if (isEqual) {
+				return true;
+			}
+			if (role == equalsVisitor.getNotEqualRole()) {
+				return true;
+			}
+			return false;
 		}
 
 		void onCompilationUnitProcessed(CtCompilationUnit compilationUnit) {
@@ -311,8 +351,8 @@ public class ImportCleaner extends ImportAnalyzer<ImportCleaner.Context> {
 	 */
 	private boolean removeAllTypeImportWithPackage(Set<CtImport> imports, String packageName) {
 		boolean found = false;
-		for (Iterator iter = imports.iterator(); iter.hasNext();) {
-			CtImport newImport = (CtImport) iter.next();
+		for (Iterator<CtImport> iter = imports.iterator(); iter.hasNext();) {
+			CtImport newImport = iter.next();
 			if (newImport.getImportKind() == CtImportKind.TYPE) {
 				CtTypeReference<?> typeRef = (CtTypeReference<?>) newImport.getReference();
 				if (typeRef.getPackage() != null && packageName.equals(typeRef.getPackage().getQualifiedName())) {

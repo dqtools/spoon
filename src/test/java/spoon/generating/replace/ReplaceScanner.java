@@ -1,18 +1,9 @@
-/**
- * Copyright (C) 2006-2018 INRIA and contributors
- * Spoon - http://spoon.gforge.inria.fr/
+/*
+ * SPDX-License-Identifier: (MIT OR CECILL-C)
  *
- * This software is governed by the CeCILL-C License under French law and
- * abiding by the rules of distribution of free software. You can use, modify
- * and/or redistribute the software under the terms of the CeCILL-C license as
- * circulated by CEA, CNRS and INRIA at http://www.cecill.info.
+ * Copyright (C) 2006-2019 INRIA and contributors
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the CeCILL-C License for more details.
- *
- * The fact that you are presently reading this means that you have had
- * knowledge of the CeCILL-C license and that you accept its terms.
+ * Spoon is available either under the terms of the MIT License (see LICENSE-MIT.txt) of the Cecill-C License (see LICENSE-CECILL-C.txt). You as the user are entitled to choose the terms under which to adopt Spoon.
  */
 package spoon.generating.replace;
 
@@ -42,8 +33,8 @@ import spoon.reflect.reference.CtTypeParameterReference;
 import spoon.reflect.reference.CtTypeReference;
 import spoon.reflect.visitor.CtScanner;
 import spoon.reflect.visitor.filter.TypeFilter;
+import spoon.support.util.internal.ElementNameMap;
 import spoon.support.util.ModelList;
-import spoon.support.util.ModelSet;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -108,7 +99,7 @@ public class ReplaceScanner extends CtScanner {
 		target.addMethod(clone);
 	}
 
-	private static Set<String> modelCollectionTypes = new HashSet<>(Arrays.asList(ModelList.class.getName(), ModelSet.class.getName()));
+	private static Set<String> modelCollectionTypes = new HashSet<>(Arrays.asList(ModelList.class.getName(), ElementNameMap.class.getName()));
 	
 	private <T> CtInvocation<?> createInvocation(Factory factory, CtMethod<T> candidate, List<CtExpression<?>> invArgs, CtInvocation getter, Class getterTypeClass) {
 		CtInvocation<?> invocation;
@@ -187,7 +178,7 @@ public class ReplaceScanner extends CtScanner {
 	private CtClass createListenerClass(Factory factory, String listenerName, CtTypeReference getterType, Type type) {
 		CtClass listener;
 		// prototype class to use, we'll change its name and code later
-		listener = Launcher.parseClass("class XXX implements ReplaceListener<CtElement> { \n"
+		listener = Launcher.parseClass("static class XXX implements ReplaceListener<CtElement> { \n"
 					       + "private final CtElement element XXX(CtElement element) { this.element = element; }\n"
 					       + "@java.lang.Override public void set(CtElement replace) {}\n"
 					       + "}");

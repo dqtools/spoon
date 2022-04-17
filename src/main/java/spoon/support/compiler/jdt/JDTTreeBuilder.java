@@ -7,6 +7,7 @@
  */
 package spoon.support.compiler.jdt;
 
+import java.util.Set;
 import org.slf4j.Logger;
 import org.eclipse.jdt.core.compiler.CharOperation;
 import org.eclipse.jdt.internal.compiler.ASTVisitor;
@@ -30,6 +31,7 @@ import org.eclipse.jdt.internal.compiler.ast.CaseStatement;
 import org.eclipse.jdt.internal.compiler.ast.CastExpression;
 import org.eclipse.jdt.internal.compiler.ast.CharLiteral;
 import org.eclipse.jdt.internal.compiler.ast.ClassLiteralAccess;
+import org.eclipse.jdt.internal.compiler.ast.CompactConstructorDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.CompoundAssignment;
 import org.eclipse.jdt.internal.compiler.ast.ConditionalExpression;
@@ -76,6 +78,7 @@ import org.eclipse.jdt.internal.compiler.ast.QualifiedSuperReference;
 import org.eclipse.jdt.internal.compiler.ast.QualifiedThisReference;
 import org.eclipse.jdt.internal.compiler.ast.QualifiedTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.Receiver;
+import org.eclipse.jdt.internal.compiler.ast.RecordComponent;
 import org.eclipse.jdt.internal.compiler.ast.ReferenceExpression;
 import org.eclipse.jdt.internal.compiler.ast.ReturnStatement;
 import org.eclipse.jdt.internal.compiler.ast.SingleMemberAnnotation;
@@ -122,6 +125,7 @@ import spoon.reflect.code.CtBreak;
 import spoon.reflect.code.CtCatch;
 import spoon.reflect.code.CtConstructorCall;
 import spoon.reflect.code.CtContinue;
+import spoon.reflect.code.CtExecutableReferenceExpression;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLambda;
@@ -158,6 +162,7 @@ import spoon.reflect.reference.CtTypeReference;
 import spoon.reflect.reference.CtUnboundVariableReference;
 import spoon.support.compiler.jdt.ContextBuilder.CastInfo;
 import spoon.support.reflect.CtExtendedModifier;
+import spoon.support.reflect.reference.CtArrayTypeReferenceImpl;
 
 import java.lang.invoke.MethodHandles;
 
@@ -906,10 +911,25 @@ public class JDTTreeBuilder extends ASTVisitor {
 	}
 
 	@Override
-	public boolean visit(AnnotationMethodDeclaration annotationTypeDeclaration, ClassScope classScope) {
+	public boolean visit(AnnotationMethodDeclaration annotationMethodDeclaration, ClassScope classScope) {
 		CtAnnotationMethod<Object> ctAnnotationMethod = factory.Core().createAnnotationMethod();
-		ctAnnotationMethod.setSimpleName(CharOperation.charToString(annotationTypeDeclaration.selector));
-		context.enter(ctAnnotationMethod, annotationTypeDeclaration);
+		ctAnnotationMethod.setSimpleName(CharOperation.charToString(annotationMethodDeclaration.selector));
+
+		if (annotationMethodDeclaration.binding != null) {
+			ctAnnotationMethod.setExtendedModifiers(
+					getModifiers(annotationMethodDeclaration.binding.modifiers, true, ModifierTarget.METHOD)
+			);
+		}
+
+		Set<CtExtendedModifier> explicitModifiers = getModifiers(
+				annotationMethodDeclaration.modifiers,
+				false,
+				ModifierTarget.METHOD
+		);
+		for (CtExtendedModifier extendedModifier : explicitModifiers) {
+			ctAnnotationMethod.addModifier(extendedModifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
+		}
+		context.enter(ctAnnotationMethod, annotationMethodDeclaration);
 		return true;
 	}
 
@@ -960,6 +980,7 @@ public class JDTTreeBuilder extends ASTVisitor {
 			CtTypeReference<?> arrayType = ((CtArrayTypeReference) typeAccess.getAccessedType()).getArrayType();
 			arrayType.setAnnotations(this.references.buildTypeReference(arrayTypeReference, scope).getAnnotations());
 			arrayType.setSimplyQualified(true);
+			((CtArrayTypeReferenceImpl) typeAccess.getAccessedType()).setDeclarationKind(getDeclarationStyle(arrayTypeReference));
 		}
 		context.enter(typeAccess, arrayTypeReference);
 		return true;
@@ -981,9 +1002,20 @@ public class JDTTreeBuilder extends ASTVisitor {
 
 		if (arrayType != null) {
 			arrayType.getArrayType().setAnnotations(this.references.buildTypeReference(arrayQualifiedTypeReference, scope).getAnnotations());
+			((CtArrayTypeReferenceImpl<?>) arrayType).setDeclarationKind(getDeclarationStyle(arrayQualifiedTypeReference));
 		}
 
 		return true;
+	}
+
+	private CtArrayTypeReferenceImpl.DeclarationKind getDeclarationStyle(ASTNode arrayReferenceNode) {
+		int sourceStart = arrayReferenceNode.sourceStart();
+		int sourceEnd = arrayReferenceNode.sourceEnd();
+
+		if (arrayReferenceNode.toString().length() > sourceEnd - sourceStart + 1) {
+			return CtArrayTypeReferenceImpl.DeclarationKind.IDENTIFIER;
+		}
+		return CtArrayTypeReferenceImpl.DeclarationKind.TYPE;
 	}
 
 	@Override
@@ -999,7 +1031,7 @@ public class JDTTreeBuilder extends ASTVisitor {
 
 	@Override
 	public boolean visit(Assignment assignment, BlockScope scope) {
-		context.enter(factory.Core().createAssignment(), assignment);
+		context.enter(factory.Core().createAssignment().setImplicit((assignment.bits & ASTNode.IsImplicit) != 0), assignment);
 		return true;
 	}
 
@@ -1055,7 +1087,12 @@ public class JDTTreeBuilder extends ASTVisitor {
 
 	@Override
 	public boolean visit(ClassLiteralAccess classLiteral, BlockScope scope) {
-		context.enter(factory.Code().createClassAccess(references.getTypeReference(classLiteral.targetType)), classLiteral);
+		if (classLiteral.targetType == null) {
+			// fix for issue #4350.
+			context.enter(factory.Code().createClassAccess(references.getTypeReference(classLiteral.type)), classLiteral);
+		} else {
+			context.enter(factory.Code().createClassAccess(references.getTypeReference(classLiteral.targetType)), classLiteral);
+		}
 		return false;
 	}
 
@@ -1071,10 +1108,10 @@ public class JDTTreeBuilder extends ASTVisitor {
 		m.setSimpleName(CharOperation.charToString(methodDeclaration.selector));
 
 		if (methodDeclaration.binding != null) {
-			m.setExtendedModifiers(getModifiers(methodDeclaration.binding.modifiers, true, true));
+			m.setExtendedModifiers(getModifiers(methodDeclaration.binding.modifiers, true, ModifierTarget.METHOD));
 		}
 
-		for (CtExtendedModifier extendedModifier : getModifiers(methodDeclaration.modifiers, false, true)) {
+		for (CtExtendedModifier extendedModifier : getModifiers(methodDeclaration.modifiers, false, ModifierTarget.METHOD)) {
 			m.addModifier(extendedModifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
 		}
 		m.setDefaultMethod(methodDeclaration.isDefaultMethod());
@@ -1105,13 +1142,16 @@ public class JDTTreeBuilder extends ASTVisitor {
 			c.setImplicit(scope.referenceContext.sourceStart() == constructorDeclaration.sourceStart());
 		}
 		if (constructorDeclaration.binding != null) {
-			c.setExtendedModifiers(getModifiers(constructorDeclaration.binding.modifiers, true, true));
+			c.setExtendedModifiers(getModifiers(constructorDeclaration.binding.modifiers, true, ModifierTarget.CONSTRUCTOR));
 		}
 		// avoid to add explicit modifier to implicit constructor
 		if (!c.isImplicit()) {
-			for (CtExtendedModifier extendedModifier : getModifiers(constructorDeclaration.modifiers, false, true)) {
+			for (CtExtendedModifier extendedModifier : getModifiers(constructorDeclaration.modifiers, false, ModifierTarget.CONSTRUCTOR)) {
 				c.addModifier(extendedModifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
 			}
+		}
+		if (constructorDeclaration instanceof CompactConstructorDeclaration) {
+			c.setCompactConstructor(true);
 		}
 		context.enter(c, constructorDeclaration);
 
@@ -1208,17 +1248,9 @@ public class JDTTreeBuilder extends ASTVisitor {
 		}
 		field.setSimpleName(CharOperation.charToString(fieldDeclaration.name));
 		if (fieldDeclaration.binding != null) {
-			if (fieldDeclaration.binding.declaringClass != null
-				&& fieldDeclaration.binding.declaringClass.isEnum()
-				&& field instanceof CtEnumValue) {
-				//enum values take over visibility from enum type
-				//JDT compiler has a bug that enum values are always public static final, even for private enum
-				field.setExtendedModifiers(getModifiers(fieldDeclaration.binding.declaringClass.modifiers, true, false));
-			} else {
-				field.setExtendedModifiers(getModifiers(fieldDeclaration.binding.modifiers, true, false));
-			}
+			field.setExtendedModifiers(getModifiers(fieldDeclaration.binding.modifiers, true, ModifierTarget.FIELD));
 		}
-		for (CtExtendedModifier extendedModifier : getModifiers(fieldDeclaration.modifiers, false, false)) {
+		for (CtExtendedModifier extendedModifier : getModifiers(fieldDeclaration.modifiers, false, ModifierTarget.FIELD)) {
 			field.addModifier(extendedModifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
 		}
 
@@ -1310,9 +1342,9 @@ public class JDTTreeBuilder extends ASTVisitor {
 		}
 		v.setSimpleName(CharOperation.charToString(localDeclaration.name));
 		if (localDeclaration.binding != null) {
-			v.setExtendedModifiers(getModifiers(localDeclaration.binding.modifiers, true, false));
+			v.setExtendedModifiers(getModifiers(localDeclaration.binding.modifiers, true, ModifierTarget.LOCAL_VARIABLE));
 		}
-		for (CtExtendedModifier extendedModifier : getModifiers(localDeclaration.modifiers, false, false)) {
+		for (CtExtendedModifier extendedModifier : getModifiers(localDeclaration.modifiers, false, ModifierTarget.LOCAL_VARIABLE)) {
 			v.addModifier(extendedModifier.getKind()); // avoid to keep implicit AND explicit modifier of the same kind.
 		}
 
@@ -1437,6 +1469,9 @@ public class JDTTreeBuilder extends ASTVisitor {
 		}
 		CtTypeReference typeReference = references.buildTypeReference(parameterizedTypeReference, null);
 		CtTypeAccess typeAccess = factory.Code().createTypeAccessWithoutCloningReference(typeReference);
+		if (typeAccess.getAccessedType() instanceof CtArrayTypeReference) {
+			((CtArrayTypeReferenceImpl<?>) typeAccess.getAccessedType()).setDeclarationKind(getDeclarationStyle(parameterizedTypeReference));
+		}
 		context.enter(typeAccess, parameterizedTypeReference);
 		return true;
 	}
@@ -1512,7 +1547,11 @@ public class JDTTreeBuilder extends ASTVisitor {
 			context.enter(helper.createCatchVariable(qualifiedTypeReference, scope), qualifiedTypeReference);
 			return true;
 		}
-		context.enter(factory.Code().createTypeAccessWithoutCloningReference(references.buildTypeReference(qualifiedTypeReference, scope)), qualifiedTypeReference);
+		CtTypeReference<?> typeReference = references.buildTypeReference(qualifiedTypeReference, scope);
+		if (typeReference != null) {
+			typeReference.setPosition(position.buildPositionCtElement(typeReference, qualifiedTypeReference));
+		}
+		context.enter(factory.Code().createTypeAccessWithoutCloningReference(typeReference), qualifiedTypeReference);
 		return true;
 	}
 
@@ -1623,6 +1662,9 @@ public class JDTTreeBuilder extends ASTVisitor {
 			return true;
 		} else if (context.stack.peekFirst().element instanceof CtCatch) {
 			context.enter(helper.createCatchVariable(singleTypeReference, scope), singleTypeReference);
+			return true;
+		} else if (context.stack.getFirst().element instanceof CtExecutableReferenceExpression) {
+			context.enter(references.getTypeParameterReference(singleTypeReference.resolvedType, singleTypeReference), singleTypeReference);
 			return true;
 		}
 		CtTypeReference<?> typeRef = references.buildTypeReference(singleTypeReference, scope);
@@ -1786,4 +1828,16 @@ public class JDTTreeBuilder extends ASTVisitor {
 		context.enter(factory.Core().createYieldStatement().setImplicit(yieldStatement.isImplicit), yieldStatement);
 		return true;
 	}
+
+	@Override
+	public void endVisit(RecordComponent recordComponent, BlockScope scope) {
+		context.exit(recordComponent);
+	}
+
+	@Override
+	public boolean visit(RecordComponent recordComponent, BlockScope scope) {
+		context.enter(factory.Core().createRecordComponent().setSimpleName(String.valueOf(recordComponent.name)), recordComponent);
+		return super.visit(recordComponent, scope);
+	}
+
 }

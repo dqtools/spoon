@@ -43,10 +43,11 @@ import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -117,6 +118,8 @@ public class StandardEnvironment implements Serializable, Environment {
 	private OutputType outputType = OutputType.CLASSES;
 
 	private Boolean noclasspath = null;
+
+	private Boolean ignoreSyntaxErrors = false;
 
 	private transient SpoonProgress spoonProgress = new SpoonProgress() { /*anonymous class with empty methods*/ };
 
@@ -417,7 +420,7 @@ private transient  ClassLoader inputClassloader;
 				if (onlyFileURLs) {
 					List<String> classpath = new ArrayList<>();
 					for (URL url : urls) {
-						classpath.add(url.getPath());
+						classpath.add(URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8));
 					}
 					setSourceClasspath(classpath.toArray(new String[0]));
 				} else {
@@ -522,6 +525,16 @@ private transient  ClassLoader inputClassloader;
 			this.noclasspath = true;
 		}
 		return noclasspath;
+	}
+
+	@Override
+	public void setIgnoreSyntaxErrors(boolean ignoreSyntaxErrors) {
+		this.ignoreSyntaxErrors = ignoreSyntaxErrors;
+	}
+
+	@Override
+	public boolean getIgnoreSyntaxErrors() {
+		return ignoreSyntaxErrors;
 	}
 
 	@Override
@@ -653,7 +666,7 @@ private transient  ClassLoader inputClassloader;
 	@Override
 	public PrettyPrinter createPrettyPrinterAutoImport() {
 		DefaultJavaPrettyPrinter printer = new DefaultJavaPrettyPrinter(this);
-		List<Processor<CtElement>> preprocessors = Collections.unmodifiableList(Arrays.<Processor<CtElement>>asList(
+		List<Processor<CtElement>> preprocessors = List.of(
 				//try to import as much types as possible
 				new ForceImportProcessor(),
 				//remove unused imports first. Do not add new imports at time when conflicts are not resolved
@@ -662,7 +675,7 @@ private transient  ClassLoader inputClassloader;
 				new ImportConflictDetector(),
 				//compute final imports
 				new ImportCleaner().setImportComparator(new DefaultImportComparator())
-		));
+		);
 		printer.setIgnoreImplicit(false);
 		printer.setPreprocessors(preprocessors);
 		return printer;
@@ -683,14 +696,14 @@ private transient  ClassLoader inputClassloader;
 
 			if (PRETTY_PRINTING_MODE.FULLYQUALIFIED.equals(prettyPrintingMode)) {
 				DefaultJavaPrettyPrinter printer = new DefaultJavaPrettyPrinter(this);
-				List<Processor<CtElement>> preprocessors = Collections.unmodifiableList(Arrays.<Processor<CtElement>>asList(
+				List<Processor<CtElement>> preprocessors = List.of(
 						//force fully qualified
 						new ForceFullyQualifiedProcessor(),
 						//solve conflicts, the current imports are relevant too
 						new ImportConflictDetector(),
 						//compute final imports
 						new ImportCleaner().setImportComparator(new DefaultImportComparator())
-				));
+				);
 				printer.setIgnoreImplicit(false);
 				printer.setPreprocessors(preprocessors);
 				return printer;

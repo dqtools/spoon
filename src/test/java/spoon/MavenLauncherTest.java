@@ -16,9 +16,19 @@
  */
 package spoon;
 
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.apache.commons.lang3.StringUtils;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import spoon.compiler.SpoonResource;
 import spoon.reflect.declaration.CtElement;
 import spoon.reflect.reference.CtTypeReference;
@@ -26,28 +36,19 @@ import spoon.reflect.visitor.CtScanner;
 import spoon.support.compiler.FileSystemFolder;
 import spoon.support.compiler.SpoonPom;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.PrintWriter;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static spoon.test.SpoonTestHelpers.assumeNotWindows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class MavenLauncherTest {
 
 	// fixme: the test consumes too much memory for now
 	// we should reduce its footprint
-	@Ignore
+	
 	@Test
+	@Disabled
 	public void testTypeResolution() {
 		MavenLauncher launcher = new MavenLauncher("./pom.xml", MavenLauncher.SOURCE_TYPE.ALL_SOURCE);
 		launcher.buildModel();
@@ -58,7 +59,7 @@ public class MavenLauncherTest {
 					CtTypeReference ref = (CtTypeReference) element;
 					if (ref.getSimpleName().contains(".")) { //Excludes nulltype, generics, ? extends E, etc
 						//contract: For a maven project with a correct classpath, all type references should point to a resolvable type
-						assertNotNull("Reference to " + ref.getSimpleName() + " point to unresolved type", ref.getTypeDeclaration());
+						assertNotNull(ref.getTypeDeclaration(), "Reference to " + ref.getSimpleName() + " point to unresolved type");
 					}
 				}
 				super.scan(element);
@@ -85,7 +86,7 @@ public class MavenLauncherTest {
 				.map(SpoonResource::getParent)
 				.collect(Collectors.toSet())
 				.size();
-		assertTrue("size: " + launcher.getModelBuilder().getInputSources().size(), launcher.getModelBuilder().getInputSources().size() >= (numberOfJavaSrcFolder));
+		assertTrue(launcher.getModelBuilder().getInputSources().size() >= numberOfJavaSrcFolder, "size: " + launcher.getModelBuilder().getInputSources().size());
 
 		// with the tests, and test that if mavenProject leads to a directory containing a pom.xml it works
 		launcher = new MavenLauncher("./", MavenLauncher.SOURCE_TYPE.ALL_SOURCE);
@@ -104,7 +105,7 @@ public class MavenLauncherTest {
 				.map(SpoonResource::getParent)
 				.collect(Collectors.toSet())
 				.size();
-		assertTrue("size: " + launcher.getModelBuilder().getInputSources().size(), launcher.getModelBuilder().getInputSources().size() >= (numberOfJavaSrcFolder + numberOfJavaTestFolder));
+		assertTrue(launcher.getModelBuilder().getInputSources().size() >= numberOfJavaSrcFolder + numberOfJavaTestFolder, "size: " + launcher.getModelBuilder().getInputSources().size());
 
 		// specify the pom.xml
 		launcher = new MavenLauncher("./pom.xml", MavenLauncher.SOURCE_TYPE.APP_SOURCE);
@@ -127,23 +128,26 @@ public class MavenLauncherTest {
 		assertEquals(166, launcher.getEnvironment().getSourceClasspath().length);
 	}
 
-	@Test(expected = SpoonException.class)
+	@Test
 	public void mavenLauncherOnANotExistingFileTest() {
-		new MavenLauncher("./pomm.xml", MavenLauncher.SOURCE_TYPE.APP_SOURCE);
-	}
+		assertThrows(SpoonException.class, () -> {
+			new MavenLauncher("./pomm.xml", MavenLauncher.SOURCE_TYPE.APP_SOURCE);
+		});
+	} 
 
-	@Test(expected = SpoonException.class)
+	@Test
 	public void mavenLauncherOnDirectoryWithoutPomTest() {
-		new MavenLauncher("./src", MavenLauncher.SOURCE_TYPE.APP_SOURCE);
-	}
+		assertThrows(SpoonException.class, () -> {
+			new MavenLauncher("./src", MavenLauncher.SOURCE_TYPE.APP_SOURCE);
+		});
+	} 
 
 	@Test
 	public void testSystemDependency() {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		//contract: scope dependencies are added to classpath
 		MavenLauncher launcher = new MavenLauncher("./src/test/resources/maven-launcher/system-dependency", MavenLauncher.SOURCE_TYPE.ALL_SOURCE);
 		assertEquals(1, launcher.getEnvironment().getSourceClasspath().length);
-		assertTrue(launcher.getEnvironment().getSourceClasspath()[0].endsWith("lib/bridge-method-annotation-1.13.jar"));
+		assertTrue(Path.of(launcher.getEnvironment().getSourceClasspath()[0]).endsWith(Path.of("lib/bridge-method-annotation-1.13.jar")));
 	}
 
 	@Test
@@ -204,16 +208,15 @@ public class MavenLauncherTest {
 			findIt = findIt || s.contains(lookingFor);
 		}
 
-		assertTrue("Content of classpath: " + StringUtils.join(classpath, ":"), findIt);
+		assertTrue(findIt, "Content of classpath: " + StringUtils.join(classpath, ":"));
 	}
 
 	@Test
-	public void testGuessMavenHome() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-		Method method = SpoonPom.class.getDeclaredMethod("guessMavenHome", new Class[]{});
-		method.setAccessible(true);
-		String mvnHome = (String) method.invoke(null, new Object[]{});
-		File mvnDir = new File(mvnHome);
-		assertTrue(mvnDir.exists());
-		assertTrue(mvnDir.isDirectory());
+	public void testGuessMavenHome() {
+		// contract: it should correctly fetch path to maven home
+		String pathToMavenHome = SpoonPom.guessMavenHome();
+		File mavenHome = new File(pathToMavenHome);
+		assertTrue(mavenHome.exists());
+		assertTrue(mavenHome.isDirectory());
 	}
 }

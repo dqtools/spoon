@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2006-2018 INRIA and contributors
+ * Copyright (C) 2006-2021 INRIA and contributors
  * Spoon - http://spoon.gforge.inria.fr/
  *
  * This software is governed by the CeCILL-C License under French law and
@@ -16,7 +16,7 @@
  */
 package spoon.test.imports;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import spoon.Launcher;
 import spoon.SpoonModelBuilder;
 import spoon.compiler.SpoonResourceHelper;
@@ -37,6 +37,7 @@ import spoon.testing.utils.ModelUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.security.AccessControlException;
 import java.util.ArrayList;
@@ -48,18 +49,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static spoon.test.SpoonTestHelpers.assumeNotWindows;
+import static org.junit.jupiter.api.Assertions.*;
 import static spoon.testing.utils.ModelUtils.build;
 
 public class ImportScannerTest {
 
 	@Test
 	public void testImportOnSpoon() throws IOException {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
-
 		File targetDir = new File("./target/import-test");
 		Launcher spoon = new Launcher();
 		spoon.addInputResource("./src/main/java/spoon/");
@@ -96,7 +92,7 @@ public class ImportScannerTest {
 			outputProcessor.createJavaFile(ctType);
 			assertEquals(1, outputProcessor.getCreatedFiles().size());
 
-			List<String> content = Files.readAllLines(outputProcessor.getCreatedFiles().get(0).toPath());
+			List<String> content = Files.readAllLines(outputProcessor.getCreatedFiles().get(0).toPath(), Charset.defaultCharset());
 
 			for (String computedImport : content) {
 				if (computedImport.startsWith("import")) {
@@ -178,7 +174,7 @@ public class ImportScannerTest {
 				}
 			}
 
-			assertEquals("Import scanner missed " + countMissingImports + " imports",0, countMissingImports);
+			assertEquals(0, countMissingImports, "Import scanner missed " + countMissingImports + " imports");
 
 			/*
 			Set<CtType> unusedKeys = new HashSet<>(unusedImports.keySet());
@@ -286,9 +282,7 @@ public class ImportScannerTest {
 
 		ImportScanner importScanner = new ImportScannerImpl();
 		importScanner.computeImports(classes.get(0));
-		// as ArithmeticException come from java.lang it is not imported anymore
-		//assertTrue( importScanner.isImported( factory.Type().createReference( ArithmeticException.class ) ));
-		assertTrue( importScanner.isImported( factory.Type().createReference( AccessControlException.class ) ));
+		assertTrue(importScanner.isImported(factory.Type().createReference(AccessControlException.class)));
 	}
 
 	@Test

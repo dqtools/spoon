@@ -16,12 +16,22 @@
  */
 package spoon.test.reference;
 
-import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import spoon.Launcher;
 import spoon.SpoonModelBuilder;
 import spoon.compiler.SpoonResource;
 import spoon.compiler.SpoonResourceHelper;
 import spoon.reflect.CtModel;
+import spoon.reflect.code.CtBlock;
 import spoon.reflect.code.CtConstructorCall;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtFieldRead;
@@ -51,25 +61,25 @@ import spoon.reflect.visitor.Query;
 import spoon.reflect.visitor.filter.NamedElementFilter;
 import spoon.reflect.visitor.filter.ReferenceTypeFilter;
 import spoon.reflect.visitor.filter.TypeFilter;
+import spoon.test.SpoonTestHelpers;
 import spoon.test.reference.testclasses.EnumValue;
 import spoon.test.reference.testclasses.Panini;
 import spoon.test.reference.testclasses.ParamRefs;
 import spoon.test.reference.testclasses.SuperAccess;
 import spoon.testing.utils.ModelUtils;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static spoon.testing.utils.ModelUtils.buildClass;
 import static spoon.testing.utils.ModelUtils.canBeBuilt;
 import static spoon.testing.utils.ModelUtils.createFactory;
@@ -343,10 +353,10 @@ public class TypeReferenceTest {
 				containsJoinerReference = true;
 			}
 		}
-		assertTrue("Reference to Demo is missing", containsDemoReference);
-		assertTrue("Reference to void is missing", containsVoidReference);
-		assertTrue("Reference to String is missing", containsStringReference);
-		assertTrue("Reference to Joiner is missing", containsJoinerReference);
+		assertTrue(containsDemoReference, "Reference to Demo is missing");
+		assertTrue(containsVoidReference, "Reference to void is missing");
+		assertTrue(containsStringReference, "Reference to String is missing");
+		assertTrue(containsJoinerReference, "Reference to Joiner is missing");
 	}
 
 	@Test
@@ -721,7 +731,7 @@ public class TypeReferenceTest {
 			loopIterations++;
 		}
 
-		assertTrue("Test loop did not execute", loopIterations > 0);
+		assertTrue(loopIterations > 0, "Test loop did not execute");
 	}
 
 	private static CtTypeReference<?> getDeepestComponentType(CtArrayTypeReference<?> arrayTypeRef) {
@@ -743,7 +753,7 @@ public class TypeReferenceTest {
 		CtModel model = launcher.buildModel();
 		List<CtTypeReference<?>> typeReferences = model.getElements(e -> e.getSimpleName().equals("SOMETHING"));
 
-		assertEquals("There should only be one reference to SOMETHING, check the resource!", 1, typeReferences.size());
+		assertEquals(1, typeReferences.size(), "There should only be one reference to SOMETHING, check the resource!");
 
 		CtTypeReference<?> typeRef = typeReferences.get(0);
 		CtTypeReference<?> declType = typeRef.getDeclaringType();
@@ -751,4 +761,78 @@ public class TypeReferenceTest {
 		assertEquals("Constants", declType.getSimpleName());
 		assertTrue(declType.isImplicit());
 	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"MyLocalClass", "MyLocalClass2", "Local123", "Valid321Name"})
+	void testIsLocalType(String className) {
+		// contract: isLocalType should return true whether its declaration exists or not
+		String code = SpoonTestHelpers.wrapLocal(
+				"		class " + className + " {\n" +
+						"		}\n"
+		);
+		CtModel model = SpoonTestHelpers.createModelFromString(code, 8);
+		CtBlock<?> block = SpoonTestHelpers.getBlock(model);
+		CtStatement ctStatement = block.getStatements().get(0);
+		assertThat(ctStatement, is(instanceOf(CtClass.class)));
+		// the class has to be a local type
+		CtClass<?> asClass = (CtClass<?>) ctStatement;
+		assertThat(asClass.isLocalType(), is(true));
+		// its reference has to be a local type
+		CtTypeReference<?> reference = asClass.getReference();
+		assertThat(reference.isLocalType(), is(true));
+		// if only the reference exists, it should still be a local type
+		asClass.delete();
+		assertThat(reference.getDeclaration(), nullValue());
+		assertThat(reference.isLocalType(), is(true));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"MyClass", "MyClass2", "Class123", "Valid321Name"})
+	void testIsNotLocalType(String className) {
+		// contract: isLocalType should return false whether its declaration exists or not
+		String code = "class " + className + " {\n" +
+						"}\n";
+		CtModel model = SpoonTestHelpers.createModelFromString(code, 8);
+		// the class has to be a non-local type
+		CtClass<?> asClass = (CtClass<?>) model.getAllTypes().iterator().next();
+		assertThat(asClass.isLocalType(), is(false));
+		// its reference has to be a non-local type
+		CtTypeReference<?> reference = asClass.getReference();
+		assertThat(reference.isLocalType(), is(false));
+		// if only the reference exists, it should still be a non-local type
+		asClass.delete();
+		assertThat(reference.getDeclaration(), nullValue());
+		assertThat(reference.isLocalType(), is(false));
+	}
+
+	@Test
+	public void testTypeReferenceToChildClass() {
+		// contract: a reference to a child class should retain the parent class name
+		final Launcher launcher = new Launcher();
+		launcher.addInputResource("./src/test/resources/reference-to-child-class/ReferenceToChildClass.java");
+		launcher.getEnvironment().setAutoImports(true);
+		launcher.getEnvironment().setNoClasspath(true);
+		launcher.buildModel();
+
+		CtClass cls = launcher.getModel().getElements(new TypeFilter<>(CtClass.class)).get(0);
+		CtTypeReference<?> interfaceTypeRef = cls.getSuperInterfaces().stream().findFirst().get();
+
+		assertEquals("Foo<ReferenceToChildClass.Bar<?>>", interfaceTypeRef.toString());
+	}
+
+	@Test
+	public void testProblemTypeReferenceToChildClass() {
+		// contract: a reference to a child class in a not compilable file should retain the parent class name
+		final Launcher launcher = new Launcher();
+		launcher.addInputResource("./src/test/resources/reference-to-child-class/ProblemReferenceToChildClass.java");
+		launcher.getEnvironment().setAutoImports(true);
+		launcher.getEnvironment().setNoClasspath(true);
+		launcher.buildModel();
+
+		CtClass cls = launcher.getModel().getElements(new TypeFilter<>(CtClass.class)).get(0);
+		CtTypeReference<?> interfaceTypeRef = cls.getSuperInterfaces().stream().findFirst().get();
+
+		assertEquals("Foo<ProblemReferenceToChildClass.Bar<?>>", interfaceTypeRef.toString());
+	}
+
 }

@@ -146,8 +146,32 @@ public class Javadoc implements Serializable {
 		if (index == -1) {
 			return null;
 		}
-		// we are interested only in complete inline tags
-		int closeIndex = text.indexOf("}", index);
+
+		// Find the corresponding end curly brace:
+		//
+		//                 Tag doesn't end here
+		//                            |
+		//                            v
+		//   {@code public class Foo {}}
+		//   ^                         ^
+		//   |                         |
+		// index                 Tag ends here
+
+		int closeIndex = -1;
+		int nesting = 1;
+		for (int i = index + 2; i < text.length(); i++) {
+			char read = text.charAt(i);
+			if (read == '{') {
+				nesting++;
+			} else if (read == '}') {
+				nesting--;
+			}
+			if (nesting == 0) {
+				closeIndex = i;
+				break;
+			}
+		}
+
 		if (closeIndex == -1) {
 			return null;
 		}
@@ -168,10 +192,11 @@ public class Javadoc implements Serializable {
 		List<String> blockLines;
 		String descriptionText;
 		if (indexOfFirstBlockTag == -1) {
-			descriptionText = trimRight(String.join(CtComment.LINE_SEPARATOR, cleanLines));
+			descriptionText = String.join(CtComment.LINE_SEPARATOR, cleanLines).stripTrailing();
 			blockLines = Collections.emptyList();
 		} else {
-			descriptionText = trimRight(String.join(CtComment.LINE_SEPARATOR, cleanLines.subList(0, indexOfFirstBlockTag)));
+			descriptionText = String.join(CtComment.LINE_SEPARATOR, cleanLines.subList(0, indexOfFirstBlockTag))
+					.stripTrailing();
 
 			// Combine cleaned lines, but only starting with the first block tag till the end
 			// In this combined string it is easier to handle multiple lines which actually belong
@@ -209,13 +234,6 @@ public class Javadoc implements Serializable {
 
 	private static boolean isABlockLine(String line) {
 		return line.trim().startsWith(BLOCK_TAG_PREFIX);
-	}
-
-	private static String trimRight(String string) {
-		while (!string.isEmpty() && Character.isWhitespace(string.charAt(string.length() - 1))) {
-			string = string.substring(0, string.length() - 1);
-		}
-		return string;
 	}
 
 }

@@ -415,7 +415,7 @@ public class ContractVerifier {
 	public void checkParentConsistency(CtElement element) {
 		final Set<CtElement> inconsistentParents = new HashSet<>();
 		new CtScanner() {
-			private Deque<CtElement> previous = new ArrayDeque();
+			private Deque<CtElement> previous = new ArrayDeque<>();
 
 			@Override
 			protected void enter(CtElement e) {
@@ -542,7 +542,7 @@ public class ContractVerifier {
 			} catch (CtPathException e) {
 				throw new AssertionError("Path " + pathStr + " is either incorrectly generated or incorrectly read", e);
 			} catch (AssertionError e) {
-				throw new AssertionError("Path " + pathStr + " detection failed on " + element.getClass().getSimpleName() + ": " + element.toString(), e);
+				throw new AssertionError("Path " + pathStr + " detection failed on " + element.getClass().getSimpleName() + ": " + element, e);
 			}
 		});
 	}

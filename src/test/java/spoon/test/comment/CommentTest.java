@@ -16,9 +16,11 @@
  */
 package spoon.test.comment;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
+import org.junit.jupiter.api.extension.ExtendWith;
 import spoon.Launcher;
 import spoon.SpoonException;
 import spoon.reflect.CtModel;
@@ -76,17 +78,20 @@ import spoon.test.comment.testclasses.CommentsOnStatements;
 import spoon.test.comment.testclasses.InlineComment;
 import spoon.test.comment.testclasses.JavaDocComment;
 import spoon.test.comment.testclasses.JavaDocEmptyCommentAndTags;
+import spoon.test.comment.testclasses.JavaDocWithLink;
 import spoon.test.comment.testclasses.OtherJavaDoc;
 import spoon.test.comment.testclasses.TestClassWithComments;
 import spoon.test.comment.testclasses.WildComments;
 import spoon.test.comment.testclasses.WindowsEOL;
+import spoon.testing.utils.LineSeperatorExtension;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -95,11 +100,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static spoon.test.SpoonTestHelpers.assumeNotWindows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
 
 public class CommentTest {
 
@@ -166,6 +172,22 @@ public class CommentTest {
 		CtJavaDoc classJavaDoc = (CtJavaDoc) type.getComments().get(0);
 		assertEquals("A short description without a proper end", classJavaDoc.getShortDescription());
 		assertEquals("A short description without a proper end", classJavaDoc.getLongDescription());
+	}
+
+	@Test
+	public void testJavadocCommentWithLink() {
+		// contract: the CtJavaDoc short and long descriptions are correct when the Javadoc comment contains a qualified name
+		Factory f = getSpoonFactory();
+		CtClass<?> type = (CtClass<?>) f.Type().get(JavaDocWithLink.class);
+		CtJavaDoc classJavaDoc = (CtJavaDoc) type.getComments().get(0);
+		assertEquals("{@link spoon.Launcher Launcher}.", classJavaDoc.getShortDescription());
+
+		classJavaDoc = (CtJavaDoc) type.getField("field1").getComments().get(0);
+		assertEquals("{@link spoon.Launcher Launcher}", classJavaDoc.getShortDescription());
+
+		classJavaDoc = (CtJavaDoc) type.getField("field2").getComments().get(0);
+		assertEquals("{@link spoon.Launcher Launcher}.", classJavaDoc.getShortDescription());
+		assertEquals("Additional text.", classJavaDoc.getLongDescription());
 	}
 
 	@Test
@@ -302,7 +324,7 @@ public class CommentTest {
 		// verify that all comments present in the AST are printed
 		for (CtComment comment : comments) {
 			assertNotNull(comment.getParent());
-			assertTrue(comment.toString() + ":" + comment.getParent() + " is not printed", strType.contains(comment.toString()));
+			assertTrue(strType.contains(comment.toString()), comment.toString() + ":" + comment.getParent() + " is not printed");
 		}
 
 		assertEquals(4, type.getComments().size());
@@ -498,7 +520,7 @@ public class CommentTest {
 		// verify that all comments present in the AST are printed
 		for (CtComment comment : comments) {
 			assertNotNull(comment.getParent());
-			assertTrue(comment.toString() + ":" + comment.getParent() + " is not printed", strType.contains(comment.toString()));
+			assertTrue(strType.contains(comment.toString()), comment.toString() + ":" + comment.getParent() + " is not printed");
 		}
 
 		assertEquals(3, type.getComments().size());
@@ -776,6 +798,58 @@ public class CommentTest {
 	}
 
 	@Test
+	void testEqualsWithDifferentClassObjects() {
+		// contract: equals return false when two objects of different classes are compared
+
+		Factory factory = new Launcher().getFactory();
+		CtNamedElement object = factory.Interface().get(CtNamedElement.class);
+		CtCommentImpl ctComment = new CtCommentImpl();
+
+		boolean shouldBeFalse = ctComment.equals(object);
+
+		assertFalse(shouldBeFalse);
+	}
+
+	@Test
+	void testEqualsWithDifferentContent() {
+		// contract: equals return false when two comments with different contents are compared
+
+		Factory factory = new Launcher().getFactory();
+		CtComment hello = factory.createInlineComment("hello");
+		CtComment bye = factory.createInlineComment("bye");
+
+		boolean shouldBeFalse = hello.equals(bye);
+
+		assertFalse(shouldBeFalse);
+	}
+
+	@Test
+	void testEqualsWithSameContentAndSameType() {
+		// contract: equals return true when comments with same content and type are compared
+
+		Factory factory = new Launcher().getFactory();
+		CtComment hello = factory.createInlineComment("hello");
+		CtComment helloAgain = factory.createInlineComment("hello");
+
+		boolean shouldBeTrue = hello.equals(helloAgain);
+
+		assertTrue(shouldBeTrue);
+	}
+
+	@Test
+	void testEqualsWithSameContentAndDifferentType() {
+		// contract: equals return false when comments with same content but different types are compared
+
+		Factory factory = new Launcher().getFactory();
+		CtComment BlockComment = factory.createComment("testContent", CtComment.CommentType.BLOCK);
+		CtComment InLineComment = factory.createInlineComment("testContent");
+
+		boolean shouldBeFalse = InLineComment.equals(BlockComment);
+
+		assertFalse(shouldBeFalse);
+	}
+
+	@Test
 	public void testAddCommentsToSnippet() {
 		Factory factory = new FactoryImpl(new DefaultCoreFactory(),
 				new StandardEnvironment());
@@ -798,15 +872,16 @@ public class CommentTest {
 	}
 
 	@Test
+	@EnabledForJreRange(min = JRE.JAVA_16)
+	@ExtendWith(LineSeperatorExtension.class)
 	public void testDocumentationContract() throws Exception {
-		assumeNotWindows(); // FIXME Make test case pass on Windows
 		// contract: all metamodel classes must be commented with an example.
 		
 		final Launcher launcher = new Launcher();
 		launcher.getEnvironment().setNoClasspath(true);
 		launcher.getEnvironment().setCommentEnabled(true);
 
-		launcher.getEnvironment().setComplianceLevel(15);
+		launcher.getEnvironment().setComplianceLevel(16);
 		// launcher.getEnvironment().setPreviewFeaturesEnabled(true);
 		
 		// interfaces.
@@ -815,12 +890,12 @@ public class CommentTest {
 		launcher.buildModel();
 
 		StringBuffer codeElementsDocumentationPage = new StringBuffer();
-		codeElementsDocumentationPage.append(IOUtils.toString(new FileReader("doc/code_elements_header.md")));
+		codeElementsDocumentationPage.append(Files.readString(Path.of("doc/code_elements_header.md"), StandardCharsets.UTF_8));
 		codeElementsDocumentationPage.append("\n\n");
 		launcher.getModel().getElements(new TypeFilter<>(CtInterface.class)).stream().forEach(x -> {
 
 			assertNotNull(x.getSimpleName() + " has no documentation", x.getDocComment());
-			assertTrue(x.getSimpleName() + " has no documentation", !x.getDocComment().isEmpty());
+			assertTrue(!x.getDocComment().isEmpty(), x.getSimpleName() + " has no documentation");
 
 			// we only consider instantiable interfaces
 			if (launcher.getModel().getElements(new AbstractFilter<CtElement>() {
@@ -860,7 +935,6 @@ public class CommentTest {
 				if ("CtEnum".equals(x.getSimpleName())) {
 					return;
 				}
-
 				// too hard to snippetize
 				if ("CtAnnotationFieldAccess".equals(x.getSimpleName())) {
 					return;
@@ -885,7 +959,7 @@ public class CommentTest {
 					CtElement el = launcher.getFactory().Code().createCodeSnippetStatement(snippet).compile();
 
 					// the snippet contains this element
-					assertTrue(snippet + " does not contain a " + x.getSimpleName(), !el.getElements(new TypeFilter<>(x.getActualClass())).isEmpty());
+					assertTrue(!el.getElements(new TypeFilter<>(x.getActualClass())).isEmpty(), snippet + " does not contain a " + x.getSimpleName());
 
 					codeElementsDocumentationPage.append(snippet + "\n");
 
@@ -896,10 +970,12 @@ public class CommentTest {
 		}
 		);
 
+		String actual = codeElementsDocumentationPage.toString();
 		try {
-			assertEquals("doc outdated, please commit doc/code_elements.md", IOUtils.toString(new FileReader("doc/code_elements.md")), codeElementsDocumentationPage.toString());
+			String expected = Files.readString(Path.of("doc/code_elements.md"), StandardCharsets.UTF_8);
+			assertEquals(expected, actual, "doc outdated, please commit doc/code_elements.md");
 		} finally {
-			IOUtils.write(codeElementsDocumentationPage.toString(), new FileOutputStream("doc/code_elements.md"));
+			Files.writeString(Path.of("doc/code_elements.md"), actual, StandardCharsets.UTF_8);
 		}
 	}
 
@@ -987,7 +1063,7 @@ public class CommentTest {
 			assertEquals(1, literal.getComments().size());
 			CtComment comment = literal.getComments().get(0);
 			String expected = literal.getValue();
-			assertEquals(literal.getPosition().toString(), expected, comment.getContent());
+			assertEquals(expected, comment.getContent(), literal.getPosition().toString());
 		}
 	}
 

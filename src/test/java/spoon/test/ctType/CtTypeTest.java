@@ -16,7 +16,7 @@
  */
 package spoon.test.ctType;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import spoon.Launcher;
 import spoon.reflect.CtModel;
 import spoon.reflect.code.CtAssignment;
@@ -37,19 +37,18 @@ import spoon.reflect.visitor.filter.NamedElementFilter;
 import spoon.reflect.visitor.filter.TypeFilter;
 import spoon.test.ctType.testclasses.X;
 
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.CoreMatchers.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static spoon.testing.utils.ModelUtils.buildClass;
 import static spoon.testing.utils.ModelUtils.createFactory;
 
@@ -196,7 +195,7 @@ public class CtTypeTest {
 
 	private void checkIsSubtype(CtTypeReference superType, CtTypeReference subType, Map<String, CtTypeReference<?>> nameToTypeRef) {
 		String msg = getTypeName(subType) + " isSubTypeOf " + getTypeName(superType);
-		assertTrue(msg, subType.isSubtypeOf(superType));
+		assertTrue(subType.isSubtypeOf(superType), msg);
 	}
 
 	private static final Pattern assignment = Pattern.compile("\\s*(\\w+)\\s*=\\s*(\\w+);");
@@ -207,7 +206,7 @@ public class CtTypeTest {
 		CtTypeReference<?> superType = nameToTypeRef.get(m.group(1));
 		CtTypeReference<?> subType = nameToTypeRef.get(m.group(2));
 		String msg = getTypeName(subType) + " is NOT SubTypeOf " + getTypeName(superType);
-		assertFalse(msg, subType.isSubtypeOf(superType));
+		assertFalse(subType.isSubtypeOf(superType), msg);
 	}
 
 	private String getTypeName(CtTypeReference<?> ref) {
@@ -266,5 +265,48 @@ public class CtTypeTest {
 		CtType<?> reFetchedTypeDecl = typeRef.getTypeDeclaration();
 
 		assertSame(reFetchedTypeDecl, typeDecl);
+	}
+  
+	@Test
+	public void testSneakyThrowsInSubClasses() {
+		// contract: Sneaky throws doesn't crash spoons method return type resolution.
+		// see e.g https://projectlombok.org/features/SneakyThrows for explanation
+		Launcher launcher = new Launcher();
+		launcher.addInputResource("src/test/resources/npe");
+		CtModel model = launcher.buildModel();
+		assertDoesNotThrow(() -> model.getAllTypes().stream().forEach(CtType::getAllExecutables));
+  }
+  
+  @Test
+	public void testGetAllExecutablesOnTypeImplementingNestedInterface() {
+		// contract: implicit static nested interfaces are correct handled in getAllExecutables.
+		Launcher launcher = new Launcher();
+		launcher.addInputResource("src/test/resources/extendsStaticInnerType");
+		CtModel model = launcher.buildModel();
+		CtType<?> type = model.getAllTypes().stream().filter(v -> v.getSimpleName().contains("BarBaz")).findAny().get();
+		int expectedNumExecutablesInJDK8 = 13;
+		int expectedNumExecutablesPostJDK8 = 14;
+		int numExecutables = type.getAllExecutables().size();
+		assertThat(numExecutables, anyOf(
+				equalTo(expectedNumExecutablesInJDK8),
+				equalTo(expectedNumExecutablesPostJDK8))
+		);	
+	}
+
+	/**
+	 * This test captures keyword constraint in CtReferenceImpl based on the compliance level, since the keyword
+	 * "enum" was only introduced in Java 5
+	 */
+	@Test
+	public void testEnumPackage() {
+		final Launcher launcher = new Launcher();
+		launcher.addInputResource("./src/test/resources/keywordCompliance/enum/Foo.java");
+		launcher.getEnvironment().setComplianceLevel(4);
+		launcher.run();
+
+		Collection<CtType<?>> types = launcher.getModel().getAllTypes();
+		assertThat(types.size(), is(1));
+		assertThat(types.stream().findFirst().get(), notNullValue());
+		assertThat(types.stream().findFirst().get().getQualifiedName(), is("keywordCompliance.enum.Foo"));
 	}
 }

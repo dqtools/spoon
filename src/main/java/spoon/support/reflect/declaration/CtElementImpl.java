@@ -19,7 +19,6 @@ import spoon.reflect.declaration.CtAnnotation;
 import spoon.reflect.declaration.CtCompilationUnit;
 import spoon.reflect.declaration.CtElement;
 import spoon.reflect.declaration.CtNamedElement;
-import spoon.reflect.declaration.CtShadowable;
 import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.ParentNotInitializedException;
 import spoon.reflect.factory.Factory;
@@ -54,8 +53,6 @@ import spoon.support.visitor.TypeReferenceScanner;
 import spoon.support.visitor.equals.CloneHelper;
 import spoon.support.visitor.equals.EqualsVisitor;
 import spoon.support.visitor.replace.ReplacementVisitor;
-
-import java.io.Serializable;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
@@ -73,7 +70,7 @@ import static spoon.reflect.visitor.CommentHelper.printComment;
  * Contains the default implementation of most CtElement methods.
  *
  */
-public abstract class CtElementImpl implements CtElement, Serializable {
+public abstract class CtElementImpl implements CtElement {
 	private static final long serialVersionUID = 1L;
 	protected static final Logger LOGGER = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	public static final String ERROR_MESSAGE_TO_STRING = "Error in printing the node. One parent isn't initialized!";
@@ -170,9 +167,6 @@ public abstract class CtElementImpl implements CtElement, Serializable {
 
 	@Override
 	public List<CtAnnotation<? extends Annotation>> getAnnotations() {
-		if (this instanceof CtShadowable) {
-			CtShadowable shadowable = (CtShadowable) this;
-		}
 		return unmodifiableList(annotations);
 	}
 
@@ -204,6 +198,7 @@ public abstract class CtElementImpl implements CtElement, Serializable {
 	@Override
 	public <E extends CtElement> E setAnnotations(List<CtAnnotation<? extends Annotation>> annotations) {
 		if (annotations == null || annotations.isEmpty()) {
+			getFactory().getEnvironment().getModelChangeListener().onListDeleteAll(this, CtRole.ANNOTATION, this.annotations, new ArrayList<>(this.annotations));
 			this.annotations = emptyList();
 			return (E) this;
 		}
@@ -370,7 +365,7 @@ public abstract class CtElementImpl implements CtElement, Serializable {
 	}
 
 	@Override
-	public <E extends CtElement> E setParent(E parent) {
+	public <E extends CtElement> E setParent(CtElement parent) {
 		this.parent = parent;
 		return (E) this;
 	}
@@ -510,7 +505,7 @@ public abstract class CtElementImpl implements CtElement, Serializable {
 	@Override
 	public Set<String> getMetadataKeys() {
 		if (metadata == null) {
-			return Collections.EMPTY_SET;
+			return Collections.emptySet();
 		}
 		return metadata.keySet();
 	}

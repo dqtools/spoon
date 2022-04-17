@@ -1,6 +1,6 @@
 package spoon.reflect.visitor;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import spoon.Launcher;
 import spoon.reflect.CtModel;
 import spoon.reflect.declaration.CtCompilationUnit;
@@ -16,13 +16,37 @@ import static org.hamcrest.MatcherAssert.assertThat;
 public class ImportCleanerTest {
 
 	@Test
-	public void testDoesNotDuplicateUnresolvedImports() {
+	void testDoesNotRemoveImportOfSubType() {
+		// contract: The import cleaner should not remove import of subtype if it is used by its simply qualified name
+		testImportCleanerDoesNotAlterImports("src/test/resources/importCleaner/DoNotRemoveSubType.java", "importCleaner.DoNotRemoveSubType");
+	}
+
+	@Test
+	void testDoesNotImportTypeWhoseParentTypeIsAlreadyImported() {
+		// contract: The import cleaner should not import the subtype if its parent has already been imported
+		testImportCleanerDoesNotAlterImports("src/test/resources/importCleaner/TypeImportButUseSubType.java", "importCleaner.TypeImportButUseSubType");
+	}
+
+	@Test
+	void testDoesNotRemoveImportForStaticFieldOfStaticClass() {
+		// contract: The import cleaner should not remove import of the static field
+		testImportCleanerDoesNotAlterImports("src/test/resources/fieldImport", "fieldImport.StaticFieldImport");
+	}
+
+	@Test
+	void testDoesNotImportClassesIfAlreadyImportedViaWildCard() {
+		// contract: The import cleaner should not import classes if they are encompassed in wildcard import.
+		testImportCleanerDoesNotAlterImports("src/test/resources/importCleaner/WildCardImport.java", "WildCardImport");
+	}
+
+	@Test
+	void testDoesNotDuplicateUnresolvedImports() {
 	    // contract: The import cleaner should not duplicate unresolved imports
 		testImportCleanerDoesNotAlterImports("./src/test/resources/unresolved/UnresolvedImport.java", "UnresolvedImport");
 	}
 
 	@Test
-	public void testDoesNotImportInheritedStaticMethod() {
+	void testDoesNotImportInheritedStaticMethod() {
 		// contract: The import cleaner should not import static attributes that are inherited
 		testImportCleanerDoesNotAlterImports("./src/test/resources/inherit-static-method", "Derived");
 	}

@@ -48,6 +48,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -235,7 +236,7 @@ public class Launcher implements SpoonAPI {
 			// Level logging.
 			opt2 = new FlaggedOption("level");
 			opt2.setLongFlag("level");
-			opt2.setHelp("Level of the ouput messages about what spoon is doing.");
+			opt2.setHelp("Level of the output messages about what spoon is doing.");
 			opt2.setStringParser(JSAP.STRING_PARSER);
 			opt2.setDefault(Level.ERROR.toString());
 			jsap.registerParameter(opt2);
@@ -376,6 +377,14 @@ public class Launcher implements SpoonAPI {
 			opt2.setDefault(CLASSPATH_MODE.NOCLASSPATH.name());
 			jsap.registerParameter(opt2);
 
+			// remove files with syntax errors from the compilation batch
+			sw1 = new Switch("ignore-syntax-errors");
+			sw1.setShortFlag('n');
+			sw1.setLongFlag("ignore-syntax-errors");
+			sw1.setHelp("If an input resource has any syntax errors, it will be removed from the compilation batch.");
+			sw1.setDefault("false");
+			jsap.registerParameter(sw1);
+
 			// show GUI
 			sw1 = new Switch("gui");
 			sw1.setShortFlag('g');
@@ -462,6 +471,7 @@ public class Launcher implements SpoonAPI {
 				break;
 		}
 
+		environment.setIgnoreSyntaxErrors(jsapActualArgs.getBoolean("ignore-syntax-errors"));
 		environment.setPreserveLineNumbers(jsapActualArgs.getBoolean("lines"));
 		environment.setTabulationSize(jsapActualArgs.getInt("tabsize"));
 		environment.useTabulations(jsapActualArgs.getBoolean("tabs"));
@@ -798,16 +808,18 @@ public class Launcher implements SpoonAPI {
 			}
 		}
 
+		final Path outputPath = getEnvironment().getDefaultFileGenerator().getOutputDirectory().toPath();
 		if (!getEnvironment().getOutputType().equals(OutputType.NO_OUTPUT) && getEnvironment().isCopyResources()) {
 			for (File dirInputSource : modelBuilder.getInputSources()) {
 				if (dirInputSource.isDirectory()) {
+					final Path dirInputSourceAsPath = dirInputSource.toPath();
 					final Collection<?> resources = FileUtils.listFiles(dirInputSource, RESOURCES_FILE_FILTER, ALL_DIR_FILTER);
 					for (Object resource : resources) {
-						final String resourceParentPath = ((File) resource).getParent();
-						final String packageDir = resourceParentPath.substring(dirInputSource.getPath().length());
-						final String targetDirectory = getEnvironment().getDefaultFileGenerator().getOutputDirectory() + packageDir;
+						final Path resourcePath = ((File) resource).toPath();
+						final Path relativePath = dirInputSourceAsPath.relativize(resourcePath);
+						final Path targetPath = outputPath.resolve(relativePath).getParent();
 						try {
-							FileUtils.copyFileToDirectory((File) resource, new File(targetDirectory));
+							FileUtils.copyFileToDirectory((File) resource, targetPath.toFile());
 						} catch (IOException e) {
 							throw new SpoonException(e);
 						}
